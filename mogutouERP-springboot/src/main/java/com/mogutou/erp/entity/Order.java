@@ -1,0 +1,72 @@
+package com.mogutou.erp.entity;
+
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+import jakarta.persistence.*;
+import lombok.Data;
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Data
+@Entity
+@Table(name = "orders")
+@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
+@DiscriminatorColumn(name = "order_type", discriminatorType = DiscriminatorType.STRING)
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(name = "order_no", nullable = false)
+    private String orderNo;
+    
+    @Column(name = "order_type", insertable = false, updatable = false)
+    private String orderType; // PURCHASE-采购订单，SALE-销售订单
+    
+    @Transient // 不持久化到数据库，仅用于接收前端参数
+    private String type; // 前端传递的订单类型：customer-客户订单，purchase-采购订单
+    
+    @Column(name = "customer_name")
+    private String customerName;
+    
+    @Column(name = "contact_person")
+    private String contactPerson;
+    
+    private String tel;
+    private String address;
+    
+    @Column(name = "delivery_time")
+    private LocalDateTime deliveryTime;
+    
+    private Float amount = 0.0f;
+    private Float freight = 0.0f;
+    
+    @ManyToOne
+    @JoinColumn(name = "operator_id")
+    private User operator;
+    
+    @Enumerated(EnumType.STRING)
+    private OrderStatus status = OrderStatus.PENDING;
+    private String remarks;
+    
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+    
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+    
+    @OneToMany(mappedBy = "order", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE}, fetch = FetchType.LAZY)
+    @JsonManagedReference
+    private List<OrderGoods> goods = new java.util.ArrayList<>();
+    
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+    
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+}
