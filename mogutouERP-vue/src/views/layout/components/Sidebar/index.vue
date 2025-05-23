@@ -1,5 +1,5 @@
 <template>
-  <div class="sidebar-container" :class="{ 'is-collapse': isCollapse, 'is-mobile': isMobile }">
+  <div class="sidebar-container">
     <el-menu
       :default-active="activeMenu"
       :collapse="isCollapse"
@@ -42,7 +42,6 @@ const permissionStore = usePermissionStore()
 
 const routes = computed(() => permissionStore.routes)
 const isCollapse = computed(() => !appStore.sidebar.opened)
-const isMobile = computed(() => appStore.device === 'mobile')
 
 // 增强路由监听，增加多个依赖项
 watch(
@@ -129,42 +128,10 @@ watch(() => route.path, updateActiveMenu, { immediate: true })
   overflow: hidden;
   background-color: $menuBg;
 
-  &.is-collapse {
-    width: 64px !important;
-  }
-  
-  &.is-mobile {
-    position: absolute;
-    top: 0;
-    left: 0;
-    height: 100%;
-    transform: translate3d(0, 0, 0);
-    transition: transform .3s ease;
-    
-    &:not(.is-collapse) {
-      width: $sideBarWidth !important;
-      box-shadow: 0 0 10px rgba(0, 0, 0, .2);
-    }
-    
-    &.is-collapse {
-      transform: translate3d(-100%, 0, 0);
-    }
-  }
-
   .el-menu {
     border: none;
     height: 100%;
     width: 100% !important;
-  }
-}
-
-@media (max-width: 768px) {
-  .sidebar-container {
-    width: 180px !important;
-    
-    &.is-collapse {
-      transform: translate3d(-100%, 0, 0);
-    }
   }
 }
 </style>

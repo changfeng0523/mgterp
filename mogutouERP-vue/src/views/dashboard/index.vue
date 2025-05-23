@@ -44,12 +44,12 @@
           <el-card class="box-card data-card" shadow="hover">
             <template #header>
               <div class="card-header">
-                <span><i class="el-icon-goods"></i> 库存</span>
+                <span><i class="el-icon-goods"></i> 商品</span>
               </div>
             </template>
             <div class="card-body">
-              <div class="data-value">{{ statistics.goodsCount }}</div>
-              <div class="data-label">库存商品总数</div>
+              <div class="data-value">{{ statistics.commodityCount }}</div>
+              <div class="data-label">商品总数</div>
               <div class="data-trend">
                 <span class="trend-flat"><i class="el-icon-right"></i> 0% 较上月</span>
               </div>
@@ -131,7 +131,7 @@ const financeChartPeriod = ref('month')
 const statistics = ref({
   customerOrderCount: 0,
   purchaseOrderCount: 0,
-  goodsCount: 0,
+  commodityCount: 0,
   staffCount: 0,
   salesData: [],
   financeData: []
@@ -155,7 +155,7 @@ const setDefaultData = () => {
     averageTurnover: 0,
     customerOrderCount: 0,
     purchaseOrderCount: 0,
-    goodsCount: 0,
+    commodityCount: 0,
     staffCount: 0,
     salesData: Array(6).fill(0).map((_, i) => ({ month: `${i+1}月`, sales: 0 })),
     financeData: Array(6).fill(0).map((_, i) => ({ month: `${i+1}月`, income: 0, expense: 0, profit: 0 }))
@@ -184,7 +184,7 @@ const fetchData = async () => {
       // 模拟数据
       customerOrderCount: 125,
       purchaseOrderCount: 87,
-      goodsCount: 56,
+      commodityCount: 56,
       staffCount: 12,
       salesData: [
         { month: '1月', sales: 320 },

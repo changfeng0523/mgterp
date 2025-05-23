@@ -29,8 +29,6 @@ const appStore = useAppStore()
 const isMobile = ref(false)
 
 const sidebarOpen = computed(() => appStore.sidebar.opened)
-const withoutAnimation = computed(() => appStore.sidebar.withoutAnimation)
-
 const closeSidebar = () => {
   appStore.closeSideBar({ withoutAnimation: false })
 }
@@ -48,7 +46,7 @@ watch(
 const classObj = computed(() => ({
   hideSidebar: !sidebarOpen.value,
   openSidebar: sidebarOpen.value,
-  withoutAnimation: withoutAnimation.value,
+  withoutAnimation: false,
   mobile: isMobile.value
 }))
 
@@ -79,22 +77,13 @@ onBeforeUnmount(() => {
 .app-wrapper {
   position: relative;
   height: 100%;
-  width: 100%;
+  width: calc(100% - 50px);
+  margin-left: 10px;
   background-color: #f5f7fa;
   
   &.mobile.openSidebar {
     position: fixed;
     top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-  }
-  
-  &.withoutAnimation {
-    .main-container,
-    .sidebar-container {
-      transition: none !important;
-    }
   }
 }
 
@@ -111,22 +100,10 @@ onBeforeUnmount(() => {
 .main-container {
   min-height: 100%;
   transition: margin-left .28s;
+  margin-left: 210px;
   position: relative;
   display: flex;
   flex-direction: column;
-  
-  .hideSidebar & {
-    margin-left: 64px;
-  }
-  
-  .openSidebar:not(.mobile) & {
-    margin-left: 210px;
-  }
-  
-  .mobile & {
-    margin-left: 0;
-    margin-right: 0;
-  }
 }
 
 .main-content {
@@ -152,17 +129,6 @@ onBeforeUnmount(() => {
   
   p {
     margin: 0;
-  }
-}
-
-@media (max-width: 992px) {
-  .app-wrapper {
-    width: 100%;
-  }
-  
-  .main-content {
-    margin: 5px;
-    padding: 10px;
   }
 }
 </style>

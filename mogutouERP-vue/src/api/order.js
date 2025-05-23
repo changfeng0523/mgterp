@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-// 使用标准的request方法，统一API调用方式
+// 获取订单列表
 export function getOrderList(params) {
   return request({
     url: '/api/customer-order/list',
@@ -56,20 +56,17 @@ export function confirmOrder(id, data) {
 
 // 按类型获取订单
 export function getOrdersByType(type, params = { page: 0, size: 10 }) {
-  // 确保参数格式正确
-  const queryParams = {
-    page: params.page || 0,
-    size: params.size || 10
-  }
-  
   return request({
-    url: `/orders/type/${type}`,
+    url: `/api/customer-order/type/${type}`,
     method: 'get',
-    params: queryParams
+    params: {
+      page: params.page || 0,
+      size: params.size || 10
+    }
   })
 }
 
-// 提供统一的API调用接口
+// 统一的API调用接口
 export function useOrderApi() {
   return {
     // 获取客户订单
@@ -88,19 +85,17 @@ export function useOrderApi() {
     createCustormerOrder(data) {
       return createOrder({ ...data, type: 'customer' })
     },
-    // 删除采购订单
+    // 删除订单
     deletePurchaseOrder(id) {
       return deleteOrder(id)
     },
-    // 删除客户订单
     deleteCustormerOrder(id) {
       return deleteOrder(id)
     },
-    // 确认采购订单
+    // 确认订单
     confirmPurchaseOrder(id, data) {
       return confirmOrder(id, data)
     },
-    // 确认客户订单
     confirmCustormerOrder(id, data) {
       return confirmOrder(id, data)
     }

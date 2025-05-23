@@ -9,8 +9,6 @@ import java.util.List;
 @Data
 @Entity
 @Table(name = "orders")
-@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
-@DiscriminatorColumn(name = "order_type", discriminatorType = DiscriminatorType.STRING)
 @com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Order {
     @Id
@@ -20,7 +18,7 @@ public class Order {
     @Column(name = "order_no", nullable = false)
     private String orderNo;
     
-    @Column(name = "order_type", insertable = false, updatable = false)
+    @Column(name = "order_type")
     private String orderType; // PURCHASE-采购订单，SALE-销售订单
     
     @Transient // 不持久化到数据库，仅用于接收前端参数
@@ -45,8 +43,7 @@ public class Order {
     @JoinColumn(name = "operator_id")
     private User operator;
     
-    @Enumerated(EnumType.STRING)
-    private OrderStatus status = OrderStatus.PENDING;
+    private String status = "PENDING"; // 订单状态：PENDING-待处理，PROCESSING-处理中，COMPLETED-已完成，CANCELLED-已取消
     private String remarks;
     
     @Column(name = "created_at", updatable = false)
