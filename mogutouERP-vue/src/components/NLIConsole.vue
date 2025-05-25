@@ -24,55 +24,37 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, watch, onMounted, nextTick } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { sendNLIRequest } from '@/api/nli'
 
 const inputText = ref('')
-const messages = ref([])
-const messageListRef = ref(null)
+const messages = ref(JSON.parse(localStorage.getItem('nli_messages') || '[]'))
 
-const send = async (arg = false) => {
-  // 如果用户点击了确认弹窗，它传入的是 true
-  // 如果用户点击了按钮，它传入的是 MouseEvent，需要修正
-  const confirmed = typeof arg === 'boolean' ? arg : false
+watch(messages, () => {
+  localStorage.setItem('nli_messages', JSON.stringify(messages.value))
+}, { deep: true })
 
-  const input = inputText.value.trim()
-  if (!input) return
-
-  messages.value.push({ role: 'user', content: input })
+const send = async () => {
+  const text = inputText.value.trim()
+  if (!text) return
+  messages.value.push({ role: 'user', content: text })
   inputText.value = ''
 
-  await nextTick(() => {
-    scrollToBottom()
-  })
+  await nextTick()
 
   try {
-    const res = await sendNLIRequest(input, confirmed)
+    const response = await sendNLIRequest(text, false)
 
-    if (res.needConfirm) {
-      await ElMessageBox.confirm(res.reply || '是否继续操作？', '敏感操作确认', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      })
-      return send(true) // ✅ 明确传布尔值
+    if (response.needConfirm) {
+      await ElMessageBox.confirm(response.reply || '是否继续执行？', '敏感操作确认')
+      const confirmRes = await sendNLIRequest(text, true)
+      messages.value.push({ role: 'assistant', content: confirmRes.reply || '✅ 操作成功' })
+    } else {
+      messages.value.push({ role: 'assistant', content: response.reply || '✅ 操作成功' })
     }
-
-    messages.value.push({ role: 'assistant', content: res.reply || '✅ 操作成功' })
   } catch (err) {
-    messages.value.push({ role: 'assistant', content: `❌ 操作失败：${err.message || '未知错误'}` })
-  } finally {
-    await nextTick(() => {
-      scrollToBottom()
-    })
-  }
-}
-
-const scrollToBottom = () => {
-  const container = messageListRef.value
-  if (container) {
-    container.scrollTop = container.scrollHeight
+    messages.value.push({ role: 'assistant', content: '❌ 操作失败：' + (err.message || '未知错误') })
   }
 }
 </script>
