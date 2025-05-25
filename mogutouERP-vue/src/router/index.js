@@ -23,19 +23,28 @@ const routes = [
     component: () => import('../views/404.vue'),
     meta: { hidden: true }
   },
-  // 仪表盘路由配置
-  {
-    path: '/',
-    component: Layout,
-    redirect: '/dashboard',
-    children: [
-      {
-        path: 'dashboard',
-        component: () => import('../views/dashboard/index.vue'),
-        meta: { title: '控制台', icon: 'dashboard', keepAlive: true }
-      }
-    ]
-  },
+  // 首页入口保持不变（重定向）
+{
+  path: '/',
+  component: Layout,
+  redirect: '/dashboard'
+},
+
+// 控制台页面正式结构
+{
+  path: '/dashboard',
+  component: Layout,
+  children: [
+    {
+      path: '',
+      name: 'Dashboard',
+      component: () => import('../views/dashboard/index.vue'),
+      meta: { title: '控制台', icon: 'dashboard', keepAlive: true }
+    }
+  ]
+},
+
+
   // 订单管理路由
   {
     path: '/order',
