@@ -10,7 +10,7 @@ export function useInventoryApi() {
         params: { page, size }
       })
     },
-    
+
     // 获取单个库存详情
     getInventoryById(id) {
       return request({
@@ -18,7 +18,7 @@ export function useInventoryApi() {
         method: 'get'
       })
     },
-    
+
     // 创建库存
     createInventory(data) {
       return request({
@@ -27,7 +27,7 @@ export function useInventoryApi() {
         data
       })
     },
-    
+
     // 更新库存
     updateInventory(id, data) {
       return request({
@@ -36,7 +36,7 @@ export function useInventoryApi() {
         data
       })
     },
-    
+
     // 删除库存
     deleteInventory(id) {
       return request({
@@ -44,7 +44,7 @@ export function useInventoryApi() {
         method: 'delete'
       })
     },
-    
+
     // 库存入库
     stockIn(data) {
       return request({
@@ -53,13 +53,29 @@ export function useInventoryApi() {
         data
       })
     },
-    
+
     // 库存出库
     stockOut(data) {
       return request({
         url: '/api/inventory/stock-out',
         method: 'post',
         data
+      })
+    },
+
+    // 获取所有商品名称列表（用于自动提示）
+    getAllProductNames() {
+      return request({
+        url: '/api/inventory/product-names',
+        method: 'get'
+      })
+    },
+
+    // 根据商品名称获取库存详情（用于自动填充价格）
+    getInventoryByProductName(productName) {
+      return request({
+        url: `/api/inventory/by-name/${encodeURIComponent(productName)}`,
+        method: 'get'
       })
     }
   }

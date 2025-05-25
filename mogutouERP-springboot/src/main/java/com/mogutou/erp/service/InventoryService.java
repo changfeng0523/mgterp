@@ -38,4 +38,19 @@ public interface InventoryService {
      * 库存出库
      */
     Inventory stockOut(Inventory inventory);
+
+    /**
+     * 根据商品名称查找库存
+     */
+    Inventory findByProductName(String productName);
+
+    /**
+     * 根据商品信息自动创建或更新库存
+     */
+    Inventory createOrUpdateInventoryFromGoods(String productName, String productCode, Integer quantity, Double unitPrice);
+
+    /**
+     * 获取所有商品名称列表（用于自动提示）
+     */
+    java.util.List<String> getAllProductNames();
 }

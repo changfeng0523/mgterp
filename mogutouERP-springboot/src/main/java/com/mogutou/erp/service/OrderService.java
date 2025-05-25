@@ -4,8 +4,12 @@ import com.mogutou.erp.entity.Order;
 import com.mogutou.erp.entity.OrderGoods;
 import com.mogutou.erp.entity.User;
 import com.mogutou.erp.entity.Goods;
+import com.mogutou.erp.entity.Inventory;
+import com.mogutou.erp.entity.FinanceRecord;
 import com.mogutou.erp.repository.OrderRepository;
 import com.mogutou.erp.repository.GoodsRepository;
+import com.mogutou.erp.service.InventoryService;
+import com.mogutou.erp.service.FinanceService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -18,20 +22,26 @@ import java.util.List;
 @Service
 public class OrderService {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OrderService.class);
-    
+
     @Autowired
     private OrderRepository orderRepository;
 
     @Autowired
     private GoodsRepository goodsRepository;
-    
+
+    @Autowired
+    private InventoryService inventoryService;
+
+    @Autowired
+    private FinanceService financeService;
+
     /**
      * 获取订单列表，支持分页
      */
     @Transactional(readOnly = true)
     public Page<Order> getOrderList(Integer page, Integer size) {
         log.info("获取订单列表: page={}, size={}", page, size);
-        
+
         try {
             Pageable pageable = PageRequest.of(page, size);
             return orderRepository.findAll(pageable);
@@ -44,7 +54,7 @@ public class OrderService {
     @Transactional
     public Order createOrder(Order order, List<OrderGoods> goods) {
         log.info("开始创建订单，订单类型: {}", order.getOrderType());
-        
+
         try {
             // 生成订单编号
             if (order.getOrderNo() == null || order.getOrderNo().isEmpty()) {
@@ -52,7 +62,7 @@ public class OrderService {
                 order.setOrderNo(orderNoPrefix + System.currentTimeMillis());
                 log.info("生成订单编号: {}", order.getOrderNo());
             }
-            
+
             // 处理订单类型字段
             String orderType = order.getOrderType();
             if (orderType == null || orderType.isEmpty()) {
@@ -65,7 +75,7 @@ public class OrderService {
                     log.info("设置默认订单类型: SALE");
                 }
             }
-            
+
             // 设置商品关联
             if (goods != null && !goods.isEmpty()) {
                 log.info("处理订单商品，数量: {}", goods.size());
@@ -73,12 +83,12 @@ public class OrderService {
                     if (item.getGoods() == null) {
                         throw new RuntimeException("订单商品中的商品对象不能为空");
                     }
-                    
+
                     // 处理商品关联 - 如果只有名称没有ID，尝试根据名称查找或创建商品
                     Goods goodsItem = item.getGoods();
                     if (goodsItem.getId() == null && goodsItem.getName() != null) {
                         List<Goods> existingGoods = goodsRepository.findByName(goodsItem.getName());
-                        
+
                         if (!existingGoods.isEmpty()) {
                             goodsItem = existingGoods.get(0);
                             log.info("使用现有商品: {}", goodsItem.getName());
@@ -92,14 +102,14 @@ public class OrderService {
                         }
                         item.setGoods(goodsItem);
                     }
-                    
+
                     item.setOrder(order);
                 }
                 order.setGoods(goods);
             } else {
                 order.setGoods(new java.util.ArrayList<>());
             }
-            
+
             // 保存订单
             return orderRepository.save(order);
         } catch (Exception e) {
@@ -107,15 +117,15 @@ public class OrderService {
             throw new RuntimeException("创建订单失败: " + e.getMessage(), e);
         }
     }
-    
+
     @Transactional(readOnly = true)
     public Page<Order> getOrdersByType(String type, Integer page, Integer size) {
         try {
             log.info("获取类型为{}的订单: page={}, size={}", type, page, size);
-            
+
             try {
                 Pageable pageable = PageRequest.of(page, size);
-                
+
                 // 根据类型获取订单
                 if ("customer".equalsIgnoreCase(type) || "SALE".equalsIgnoreCase(type)) {
                     // 获取销售订单
@@ -146,13 +156,113 @@ public class OrderService {
     public Order confirmOrder(Long id, float freight) {
         Order order = orderRepository.findById(id)
             .orElseThrow(() -> new RuntimeException("订单不存在"));
-        
+
         if ("COMPLETED".equals(order.getStatus())) {
             throw new RuntimeException("订单请勿重复确认");
         }
-        
+
+        // 订单确认后自动更新库存
+        updateInventoryOnOrderConfirm(order);
+
+        // 订单确认后自动创建财务记录
+        createFinanceRecordOnOrderConfirm(order);
+
         order.setStatus("COMPLETED");
         order.setFreight(freight);
         return orderRepository.save(order);
+    }
+
+    /**
+     * 订单确认时自动更新库存
+     */
+    private void updateInventoryOnOrderConfirm(Order order) {
+        try {
+            log.info("开始更新订单库存，订单ID: {}, 订单类型: {}", order.getId(), order.getOrderType());
+
+            for (OrderGoods orderGoods : order.getGoods()) {
+                Goods goods = orderGoods.getGoods();
+                Integer quantity = orderGoods.getQuantity();
+                Double unitPrice = orderGoods.getUnitPrice() != null ? orderGoods.getUnitPrice().doubleValue() : null;
+
+                if ("PURCHASE".equals(order.getOrderType())) {
+                    // 采购订单确认：增加库存
+                    log.info("采购订单确认，增加库存: 商品={}, 数量={}", goods.getName(), quantity);
+                    inventoryService.createOrUpdateInventoryFromGoods(
+                        goods.getName(),
+                        goods.getCode(),
+                        quantity,
+                        unitPrice
+                    );
+                } else if ("SALE".equals(order.getOrderType())) {
+                    // 销售订单确认：减少库存
+                    log.info("销售订单确认，减少库存: 商品={}, 数量={}", goods.getName(), quantity);
+                    Inventory inventory = inventoryService.findByProductName(goods.getName());
+                    if (inventory != null) {
+                        if (inventory.getQuantity() < quantity) {
+                            throw new RuntimeException("库存不足，商品: " + goods.getName() +
+                                ", 当前库存: " + inventory.getQuantity() +
+                                ", 需要: " + quantity);
+                        }
+                        // 减少库存
+                        Inventory stockOutData = new Inventory();
+                        stockOutData.setId(inventory.getId());
+                        stockOutData.setQuantity(quantity);
+                        inventoryService.stockOut(stockOutData);
+                    } else {
+                        throw new RuntimeException("库存中未找到商品: " + goods.getName());
+                    }
+                }
+            }
+
+            log.info("订单库存更新完成，订单ID: {}", order.getId());
+        } catch (Exception e) {
+            log.error("订单库存更新失败，订单ID: {}, 错误: {}", order.getId(), e.getMessage(), e);
+            throw new RuntimeException("库存更新失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 订单确认时自动创建财务记录
+     */
+    private void createFinanceRecordOnOrderConfirm(Order order) {
+        try {
+            log.info("开始创建订单财务记录，订单ID: {}, 订单类型: {}", order.getId(), order.getOrderType());
+
+            FinanceRecord financeRecord = new FinanceRecord();
+            financeRecord.setRecordDate(new java.util.Date());
+            financeRecord.setCreatedBy("system"); // 系统自动创建
+
+            // 计算订单总金额
+            java.math.BigDecimal totalAmount = java.math.BigDecimal.ZERO;
+            for (OrderGoods orderGoods : order.getGoods()) {
+                if (orderGoods.getTotalPrice() != null) {
+                    totalAmount = totalAmount.add(java.math.BigDecimal.valueOf(orderGoods.getTotalPrice()));
+                }
+            }
+
+            if ("PURCHASE".equals(order.getOrderType())) {
+                // 采购订单：记录为支出
+                financeRecord.setExpense(totalAmount);
+                financeRecord.setIncome(java.math.BigDecimal.ZERO);
+                financeRecord.setRecordType("PURCHASE");
+                financeRecord.setDescription("采购订单自动记录 - 订单号: " + order.getOrderNo());
+                log.info("采购订单确认，记录支出: 金额={}", totalAmount);
+            } else if ("SALE".equals(order.getOrderType())) {
+                // 销售订单：记录为收入
+                financeRecord.setIncome(totalAmount);
+                financeRecord.setExpense(java.math.BigDecimal.ZERO);
+                financeRecord.setRecordType("SALES");
+                financeRecord.setDescription("销售订单自动记录 - 订单号: " + order.getOrderNo());
+                log.info("销售订单确认，记录收入: 金额={}", totalAmount);
+            }
+
+            // 保存财务记录
+            financeService.createFinanceRecord(financeRecord);
+            log.info("订单财务记录创建完成，订单ID: {}", order.getId());
+
+        } catch (Exception e) {
+            log.error("订单财务记录创建失败，订单ID: {}, 错误: {}", order.getId(), e.getMessage(), e);
+            // 财务记录创建失败不影响订单确认，只记录日志
+        }
     }
 }

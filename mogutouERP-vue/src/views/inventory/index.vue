@@ -4,11 +4,22 @@
       <div class="header">
         <el-button type="primary" @click="handleCreate">新增库存</el-button>
       </div>
-      
+
       <el-table :data="tableData" border style="width: 100%" v-loading="loading">
         <el-table-column prop="productName" label="商品名称" min-width="120" />
         <el-table-column prop="productCode" label="商品编码" min-width="100" />
-        <el-table-column prop="quantity" label="数量" min-width="80" />
+        <el-table-column prop="quantity" label="数量" min-width="120">
+          <template #default="scope">
+            <div class="quantity-cell">
+              <span :class="{ 'low-stock': isLowStock(scope.row) }">
+                {{ scope.row.quantity }}
+              </span>
+              <el-icon v-if="isLowStock(scope.row)" class="warning-icon" color="#F56C6C">
+                <Warning />
+              </el-icon>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="unit" label="单位" min-width="80" />
         <el-table-column prop="unitPrice" label="单价" min-width="80">
           <template #default="scope">
@@ -17,6 +28,13 @@
         </el-table-column>
         <el-table-column prop="location" label="位置" min-width="100" />
         <el-table-column prop="category" label="分类" min-width="100" />
+        <el-table-column prop="warningThreshold" label="预警阈值" min-width="100">
+          <template #default="scope">
+            <el-tag size="small" type="info">
+              {{ scope.row.warningThreshold || 5 }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="scope">
             <div class="action-buttons">
@@ -26,7 +44,7 @@
           </template>
         </el-table-column>
       </el-table>
-      
+
       <el-pagination
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
@@ -45,6 +63,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useInventoryStore } from '@/store/modules/inventory'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Warning } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const inventoryStore = useInventoryStore()
@@ -62,7 +81,7 @@ const fetchData = async () => {
       page: currentPage.value - 1, // Spring Boot分页从0开始
       size: pageSize.value
     })
-    
+
     // 处理后端返回的数据结构
     if (response && response.data) {
       // 处理Spring Data JPA Page对象结构
@@ -105,7 +124,7 @@ const handleDelete = (row) => {
     ElMessage.error('无效的库存ID')
     return
   }
-  
+
   ElMessageBox.confirm('确定删除该库存记录吗?', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
@@ -133,6 +152,12 @@ const handleSizeChange = (val) => {
 const handleCurrentChange = (val) => {
   currentPage.value = val
   fetchData()
+}
+
+// 判断是否为低库存
+const isLowStock = (row) => {
+  const threshold = row.warningThreshold || 5
+  return row.quantity <= threshold
 }
 
 onMounted(() => {
@@ -175,5 +200,34 @@ onMounted(() => {
   background-color: #F56C6C;
   border-color: #F56C6C;
   color: white;
+}
+
+/* 库存预警样式 */
+.quantity-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.low-stock {
+  color: #F56C6C;
+  font-weight: bold;
+}
+
+.warning-icon {
+  font-size: 16px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 </style>

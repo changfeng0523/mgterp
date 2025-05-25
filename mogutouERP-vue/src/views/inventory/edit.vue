@@ -6,70 +6,83 @@
       </div>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" v-enterToNext>
         <el-form-item label="商品名称" prop="productName">
-          <el-input 
-            v-model="form.productName" 
-            placeholder="请输入商品名称" 
+          <el-input
+            v-model="form.productName"
+            placeholder="请输入商品名称"
             autocomplete="off"
           />
         </el-form-item>
-        
+
         <el-form-item label="商品编码" prop="productCode">
-          <el-input 
-            v-model="form.productCode" 
-            placeholder="请输入商品编码" 
+          <el-input
+            v-model="form.productCode"
+            placeholder="请输入商品编码"
             autocomplete="off"
           />
         </el-form-item>
-        
+
         <el-form-item label="数量" prop="quantity">
-          <el-input-number 
-            v-model="form.quantity" 
-            :min="0" 
+          <el-input-number
+            v-model="form.quantity"
+            :min="0"
           />
         </el-form-item>
-        
+
         <el-form-item label="单位" prop="unit">
-          <el-input 
-            v-model="form.unit" 
-            placeholder="请输入单位(如:个、箱)" 
+          <el-input
+            v-model="form.unit"
+            placeholder="请输入单位(如:个、箱)"
             autocomplete="off"
           />
         </el-form-item>
-        
+
         <el-form-item label="单价" prop="unitPrice">
-          <el-input-number 
-            v-model="form.unitPrice" 
-            :precision="2" 
-            :min="0" 
+          <el-input-number
+            v-model="form.unitPrice"
+            :precision="2"
+            :min="0"
           />
         </el-form-item>
-        
+
         <el-form-item label="库存位置" prop="location">
-          <el-input 
-            v-model="form.location" 
-            placeholder="请输入库存位置" 
+          <el-input
+            v-model="form.location"
+            placeholder="请输入库存位置"
             autocomplete="off"
           />
         </el-form-item>
-        
+
         <el-form-item label="分类" prop="category">
-          <el-input 
-            v-model="form.category" 
-            placeholder="请输入商品分类" 
+          <el-input
+            v-model="form.category"
+            placeholder="请输入商品分类"
             autocomplete="off"
           />
         </el-form-item>
-        
+
+        <el-form-item label="预警阈值" prop="warningThreshold">
+          <el-input-number
+            v-model="form.warningThreshold"
+            :min="0"
+            controls-position="right"
+            :precision="0"
+            placeholder="库存低于此值时显示预警"
+          />
+          <div class="form-tip">
+            当库存数量低于此值时，系统将显示预警提示
+          </div>
+        </el-form-item>
+
         <el-form-item label="描述" prop="description">
-          <el-input 
-            v-model="form.description" 
-            type="textarea" 
-            placeholder="请输入商品描述" 
+          <el-input
+            v-model="form.description"
+            type="textarea"
+            placeholder="请输入商品描述"
             :rows="3"
             autocomplete="off"
           />
         </el-form-item>
-        
+
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="handleSubmit">保存</el-button>
           <el-button @click="handleCancel">取消</el-button>
@@ -100,7 +113,8 @@ const form = ref({
   unitPrice: 0,
   location: '',
   category: '',
-  description: ''
+  description: '',
+  warningThreshold: 5
 })
 
 const rules = {
@@ -133,7 +147,7 @@ const fetchData = async () => {
       router.push('/inventory/index')
       return
     }
-    
+
     const response = await inventoryStore.getInventoryById(id)
     // 确保对象属性与表单字段匹配
     if (response && response.data) {
@@ -153,17 +167,17 @@ const fetchData = async () => {
 
 const handleSubmit = async () => {
   if (!formRef.value) return
-  
+
   try {
     await formRef.value.validate()
     loading.value = true
-    
+
     try {
       const id = Number(form.value.id)
       if (isNaN(id)) {
         throw new Error('无效的库存ID')
       }
-      
+
       await inventoryStore.updateInventory(id, form.value)
       ElMessage.success('更新成功')
       router.push('/inventory/index')
@@ -202,5 +216,12 @@ onMounted(() => {
   color: #303133;
   font-size: 18px;
   font-weight: 600;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 5px;
+  line-height: 1.4;
 }
 </style>

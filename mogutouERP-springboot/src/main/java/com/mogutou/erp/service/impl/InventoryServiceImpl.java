@@ -61,11 +61,11 @@ public class InventoryServiceImpl implements InventoryService {
     public Inventory stockIn(Inventory inventoryData) {
         // 获取现有库存
         Inventory existingInventory = getInventoryById(inventoryData.getId());
-        
+
         // 增加库存数量
         int newQuantity = existingInventory.getQuantity() + inventoryData.getQuantity();
         existingInventory.setQuantity(newQuantity);
-        
+
         // 更新其他可能变更的字段
         if (inventoryData.getUnitPrice() != null) {
             existingInventory.setUnitPrice(inventoryData.getUnitPrice());
@@ -73,7 +73,7 @@ public class InventoryServiceImpl implements InventoryService {
         if (inventoryData.getLocation() != null) {
             existingInventory.setLocation(inventoryData.getLocation());
         }
-        
+
         return inventoryRepository.save(existingInventory);
     }
 
@@ -82,16 +82,53 @@ public class InventoryServiceImpl implements InventoryService {
     public Inventory stockOut(Inventory inventoryData) {
         // 获取现有库存
         Inventory existingInventory = getInventoryById(inventoryData.getId());
-        
+
         // 检查库存是否足够
         if (existingInventory.getQuantity() < inventoryData.getQuantity()) {
             throw new IllegalArgumentException("库存不足，当前库存: " + existingInventory.getQuantity());
         }
-        
+
         // 减少库存数量
         int newQuantity = existingInventory.getQuantity() - inventoryData.getQuantity();
         existingInventory.setQuantity(newQuantity);
-        
+
         return inventoryRepository.save(existingInventory);
+    }
+
+    @Override
+    public Inventory findByProductName(String productName) {
+        return inventoryRepository.findByProductName(productName).orElse(null);
+    }
+
+    @Override
+    @Transactional
+    public Inventory createOrUpdateInventoryFromGoods(String productName, String productCode, Integer quantity, Double unitPrice) {
+        // 先查找是否已存在该商品的库存
+        Inventory existingInventory = findByProductName(productName);
+
+        if (existingInventory != null) {
+            // 如果已存在，更新数量
+            existingInventory.setQuantity(existingInventory.getQuantity() + quantity);
+            if (unitPrice != null) {
+                existingInventory.setUnitPrice(unitPrice);
+            }
+            return inventoryRepository.save(existingInventory);
+        } else {
+            // 如果不存在，创建新的库存记录
+            Inventory newInventory = new Inventory();
+            newInventory.setProductName(productName);
+            newInventory.setProductCode(productCode != null ? productCode : ""); // 编号为空
+            newInventory.setQuantity(quantity);
+            newInventory.setUnitPrice(unitPrice);
+            newInventory.setUnit("个"); // 默认单位
+            newInventory.setLocation("默认仓库"); // 默认位置
+            newInventory.setWarningThreshold(5); // 默认预警阈值
+            return inventoryRepository.save(newInventory);
+        }
+    }
+
+    @Override
+    public java.util.List<String> getAllProductNames() {
+        return inventoryRepository.findAllDistinctProductNames();
     }
 }

@@ -16,7 +16,7 @@
           <el-button type="primary" @click="handleAddRecord">添加财务记录</el-button>
         </div>
       </div>
-      
+
       <el-table :data="tableData" border style="width: 100%" v-loading="loading">
         <el-table-column prop="date" label="日期" min-width="100" />
         <el-table-column prop="income" label="收入" min-width="100">
@@ -43,14 +43,14 @@
           </template>
         </el-table-column>
       </el-table>
-      
+
       <div class="chart-container">
         <el-card>
           <div id="finance-chart" style="width: 100%; height: 400px;"></div>
         </el-card>
       </div>
     </el-card>
-    
+
     <!-- 财务记录表单对话框 -->
     <el-dialog
       :title="dialogTitle"
@@ -67,7 +67,7 @@
             style="width: 100%"
           />
         </el-form-item>
-        
+
         <el-form-item label="收入" prop="income">
           <el-input-number
             v-model="form.income"
@@ -77,7 +77,7 @@
             style="width: 100%"
           />
         </el-form-item>
-        
+
         <el-form-item label="支出" prop="expense">
           <el-input-number
             v-model="form.expense"
@@ -87,7 +87,7 @@
             style="width: 100%"
           />
         </el-form-item>
-        
+
         <el-form-item label="类型" prop="recordType">
           <el-select v-model="form.recordType" placeholder="请选择类型" style="width: 100%">
             <el-option label="销售收入" value="SALES" />
@@ -97,7 +97,7 @@
             <el-option label="其他支出" value="OTHER_EXPENSE" />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="描述" prop="description">
           <el-input
             v-model="form.description"
@@ -107,7 +107,7 @@
           />
         </el-form-item>
       </el-form>
-      
+
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="dialogVisible = false">取消</el-button>
@@ -154,7 +154,7 @@ const fetchData = async () => {
   try {
     const { startDate, endDate } = getDateRange()
     const response = await financeStore.getFinanceData({ startDate, endDate })
-    
+
     // 处理后端返回的数据
     if (response && response.data) {
       tableData.value = response.data
@@ -180,11 +180,11 @@ const getDateRange = () => {
   const now = new Date()
   const startDate = dateRange.value?.[0] || new Date(now.getFullYear(), now.getMonth(), 1)
   const endDate = dateRange.value?.[1] || new Date()
-  
+
   // 确保日期格式正确
-  return { 
-    startDate: startDate.toISOString(), 
-    endDate: endDate.toISOString() 
+  return {
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString()
   }
 }
 
@@ -195,45 +195,137 @@ const handleDateChange = () => {
 const renderChart = (data) => {
   const chartDom = document.getElementById('finance-chart')
   if (!chartDom) return
-  
+
   // 确保数据是数组
   const chartData = Array.isArray(data) ? data : []
-  
+
   const myChart = echarts.init(chartDom)
   const option = {
+    title: {
+      text: '财务趋势分析',
+      left: 'center'
+    },
     tooltip: {
-      trigger: 'axis'
+      trigger: 'axis',
+      axisPointer: {
+        type: 'cross',
+        label: {
+          backgroundColor: '#6a7985'
+        }
+      }
     },
     legend: {
-      data: ['收入', '支出', '利润']
+      data: ['收入', '支出', '利润'],
+      top: '10%'
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      top: '20%',
+      containLabel: true
     },
     xAxis: {
       type: 'category',
-      data: chartData.map(item => item.date)
+      boundaryGap: false,
+      data: chartData.map(item => {
+        // 格式化日期显示
+        if (item.date) {
+          return new Date(item.date).toLocaleDateString('zh-CN', {
+            month: 'short',
+            day: 'numeric'
+          })
+        }
+        return '未知'
+      })
     },
     yAxis: {
-      type: 'value'
+      type: 'value',
+      axisLabel: {
+        formatter: '￥{value}'
+      }
     },
     series: [
       {
         name: '收入',
-        type: 'bar',
-        data: chartData.map(item => item.income)
+        type: 'line',
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: {
+          color: '#67C23A',
+          width: 3
+        },
+        itemStyle: {
+          color: '#67C23A'
+        },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(103, 194, 58, 0.3)' },
+              { offset: 1, color: 'rgba(103, 194, 58, 0.1)' }
+            ]
+          }
+        },
+        data: chartData.map(item => item.income || 0)
       },
       {
         name: '支出',
-        type: 'bar',
-        data: chartData.map(item => item.expense)
+        type: 'line',
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: {
+          color: '#F56C6C',
+          width: 3
+        },
+        itemStyle: {
+          color: '#F56C6C'
+        },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(245, 108, 108, 0.3)' },
+              { offset: 1, color: 'rgba(245, 108, 108, 0.1)' }
+            ]
+          }
+        },
+        data: chartData.map(item => item.expense || 0)
       },
       {
         name: '利润',
         type: 'line',
-        data: chartData.map(item => item.profit)
+        smooth: true,
+        symbol: 'diamond',
+        symbolSize: 8,
+        lineStyle: {
+          color: '#409EFF',
+          width: 4
+        },
+        itemStyle: {
+          color: '#409EFF'
+        },
+        data: chartData.map(item => item.profit || 0)
       }
     ]
   }
-  
+
   myChart.setOption(option)
+
+  // 响应式调整
+  window.addEventListener('resize', () => {
+    myChart.resize()
+  })
 }
 
 // 格式化货币
@@ -253,7 +345,7 @@ const handleAddRecord = () => {
 const handleEdit = (row) => {
   resetForm()
   dialogTitle.value = '编辑财务记录'
-  
+
   // 填充表单数据
   form.id = row.id
   form.recordDate = new Date(row.date)
@@ -261,7 +353,7 @@ const handleEdit = (row) => {
   form.expense = Number(row.expense)
   form.recordType = row.type || 'OTHER_INCOME'
   form.description = row.description || ''
-  
+
   dialogVisible.value = true
 }
 
@@ -271,7 +363,7 @@ const handleDelete = (row) => {
     ElMessage.warning('无法删除此记录')
     return
   }
-  
+
   ElMessageBox.confirm('确定要删除此财务记录吗？', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
@@ -291,10 +383,10 @@ const handleDelete = (row) => {
 // 提交表单
 const submitForm = async () => {
   if (!formRef.value) return
-  
+
   await formRef.value.validate(async (valid) => {
     if (!valid) return
-    
+
     submitLoading.value = true
     try {
       const recordData = {
@@ -305,7 +397,7 @@ const submitForm = async () => {
         recordType: form.recordType,
         description: form.description
       }
-      
+
       if (form.id) {
         // 更新
         await financeStore.updateFinanceRecord(form.id, recordData)
@@ -315,7 +407,7 @@ const submitForm = async () => {
         await financeStore.createFinanceRecord(recordData)
         ElMessage.success('添加成功')
       }
-      
+
       dialogVisible.value = false
       fetchData()
     } catch (error) {
@@ -335,7 +427,7 @@ const resetForm = () => {
   form.expense = 0
   form.recordType = 'SALES'
   form.description = ''
-  
+
   if (formRef.value) {
     formRef.value.resetFields()
   }

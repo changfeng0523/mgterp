@@ -25,23 +25,23 @@ public class InventoryController {
             @RequestParam(value = "size", defaultValue = "10") Integer size) {
         try {
             log.info("接收到获取库存列表请求: page={}, size={}", page, size);
-            
+
             // 检查inventoryService是否正确注入
             if (inventoryService == null) {
                 log.error("inventoryService未正确注入");
                 return Result.error("系统错误：服务组件未初始化");
             }
-            
+
             try {
                 // 调用服务层获取库存列表
                 Page<Inventory> inventoryPage = inventoryService.getInventoryList(page, size);
-                
+
                 // 检查返回的库存列表是否为null
                 if (inventoryPage == null) {
                     log.warn("inventoryService.getInventoryList()返回了null");
                     return Result.success(new java.util.ArrayList<>());
                 }
-                
+
                 log.info("成功返回库存列表，数量: {}", inventoryPage.getSize());
                 return Result.success(inventoryPage);
             } catch (org.springframework.dao.DataAccessException e) {
@@ -54,6 +54,44 @@ public class InventoryController {
         } catch (Exception e) {
             log.error("获取库存列表失败(未预期的异常): {}", e.getMessage(), e);
             return Result.error("系统错误，请联系管理员");
+        }
+    }
+
+    /**
+     * 获取所有商品名称列表（用于自动提示）
+     */
+    @GetMapping("/product-names")
+    public Result<java.util.List<String>> getAllProductNames() {
+        try {
+            log.info("获取所有商品名称列表");
+            java.util.List<String> productNames = inventoryService.getAllProductNames();
+            log.info("获取商品名称列表成功，数量: {}", productNames.size());
+            return Result.success(productNames);
+        } catch (Exception e) {
+            log.error("获取商品名称列表失败: {}", e.getMessage(), e);
+            return Result.error("获取商品名称列表失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 根据商品名称获取库存详情（用于自动填充价格）
+     */
+    @GetMapping("/by-name/{productName}")
+    public Result<Inventory> getInventoryByProductName(@PathVariable String productName) {
+        try {
+            log.info("根据商品名称获取库存详情: {}", productName);
+            Inventory inventory = inventoryService.findByProductName(productName);
+            if (inventory != null) {
+                log.info("找到库存记录: 商品={}, 价格={}, 数量={}",
+                    inventory.getProductName(), inventory.getUnitPrice(), inventory.getQuantity());
+                return Result.success(inventory);
+            } else {
+                log.info("未找到商品库存记录: {}", productName);
+                return Result.error("未找到该商品的库存记录");
+            }
+        } catch (Exception e) {
+            log.error("根据商品名称获取库存详情失败: {}", e.getMessage(), e);
+            return Result.error("获取商品库存详情失败: " + e.getMessage());
         }
     }
 
