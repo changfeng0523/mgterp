@@ -18,6 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.ArrayList;
+import java.math.BigDecimal;
 
 @Service
 public class OrderService {
@@ -264,5 +268,46 @@ public class OrderService {
             log.error("订单财务记录创建失败，订单ID: {}, 错误: {}", order.getId(), e.getMessage(), e);
             // 财务记录创建失败不影响订单确认，只记录日志
         }
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, List<?>> getMonthlyTypedOrderData(int year) {
+        List<Map<String, Object>> monthlyStats = orderRepository.getMonthlyOrderStatisticsByType(year);
+        
+        List<Integer> salesOrderCounts = new ArrayList<>(12);
+        List<BigDecimal> salesTotalAmounts = new ArrayList<>(12);
+        List<Integer> purchaseOrderCounts = new ArrayList<>(12);
+        List<BigDecimal> purchaseTotalAmounts = new ArrayList<>(12);
+
+        for (int i = 0; i < 12; i++) {
+            salesOrderCounts.add(0);
+            salesTotalAmounts.add(BigDecimal.ZERO);
+            purchaseOrderCounts.add(0);
+            purchaseTotalAmounts.add(BigDecimal.ZERO);
+        }
+
+        for (Map<String, Object> stat : monthlyStats) {
+            Integer month = (Integer) stat.get("month");
+            String orderType = (String) stat.get("orderType");
+            Long count = (Long) stat.get("orderCount");
+            Double amount = (Double) stat.get("totalAmount"); 
+
+            if (month != null && month >= 1 && month <= 12) {
+                if ("SALE".equals(orderType)) {
+                    salesOrderCounts.set(month - 1, count != null ? count.intValue() : 0);
+                    salesTotalAmounts.set(month - 1, amount != null ? BigDecimal.valueOf(amount) : BigDecimal.ZERO);
+                } else if ("PURCHASE".equals(orderType)) {
+                    purchaseOrderCounts.set(month - 1, count != null ? count.intValue() : 0);
+                    purchaseTotalAmounts.set(month - 1, amount != null ? BigDecimal.valueOf(amount) : BigDecimal.ZERO);
+                }
+            }
+        }
+
+        Map<String, List<?>> result = new HashMap<>();
+        result.put("salesOrderCounts", salesOrderCounts);
+        result.put("salesTotalAmounts", salesTotalAmounts);
+        result.put("purchaseOrderCounts", purchaseOrderCounts);
+        result.put("purchaseTotalAmounts", purchaseTotalAmounts);
+        return result;
     }
 }

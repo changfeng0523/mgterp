@@ -42,12 +42,28 @@ public class FinanceController {
                     .collect(Collectors.toList());
             
             // 生成订单数量（这里可以从订单表中获取实际数据）
-            List<Integer> orderQuantity = new ArrayList<>();
-            for (int i = 0; i < 12; i++) {
-                orderQuantity.add(0); // 这里应该从订单表中获取实际数据
-            }
+            // List<Integer> orderQuantity = new ArrayList<>();
+            // for (int i = 0; i < 12; i++) {
+            //     orderQuantity.add(0); // 这里应该从订单表中获取实际数据
+            // }
+            @SuppressWarnings("unchecked")
+            List<Integer> salesOrderQuantity = (List<Integer>) monthlyData.get("salesOrderQuantity");
+            @SuppressWarnings("unchecked")
+            List<Integer> purchaseOrderQuantity = (List<Integer>) monthlyData.get("purchaseOrderQuantity");
+            @SuppressWarnings("unchecked")
+            List<BigDecimal> salesTotalAmountsBigDecimal = (List<BigDecimal>) monthlyData.get("salesTotalAmounts");
+            @SuppressWarnings("unchecked")
+            List<BigDecimal> purchaseTotalAmountsBigDecimal = (List<BigDecimal>) monthlyData.get("purchaseTotalAmounts");
+
+            // Convert BigDecimal lists to Float lists
+            List<Float> salesTotalAmounts = salesTotalAmountsBigDecimal.stream()
+                    .map(bd -> bd != null ? bd.floatValue() : 0.0f)
+                    .collect(Collectors.toList());
+            List<Float> purchaseTotalAmounts = purchaseTotalAmountsBigDecimal.stream()
+                    .map(bd -> bd != null ? bd.floatValue() : 0.0f)
+                    .collect(Collectors.toList());
             
-            Finance finance = new Finance(profit, turnover, orderQuantity);
+            Finance finance = new Finance(profit, turnover, salesOrderQuantity, purchaseOrderQuantity, salesTotalAmounts, purchaseTotalAmounts);
             return Result.success(finance);
         } catch (Exception e) {
             e.printStackTrace();

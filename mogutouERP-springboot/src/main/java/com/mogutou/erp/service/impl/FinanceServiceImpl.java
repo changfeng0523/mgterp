@@ -3,7 +3,9 @@ package com.mogutou.erp.service.impl;
 import com.mogutou.erp.entity.FinanceRecord;
 import com.mogutou.erp.repository.FinanceRecordRepository;
 import com.mogutou.erp.service.FinanceService;
+import com.mogutou.erp.service.OrderService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -17,6 +19,10 @@ public class FinanceServiceImpl implements FinanceService {
 
     @Autowired
     private FinanceRecordRepository financeRecordRepository;
+
+    @Autowired
+    @Lazy
+    private OrderService orderService;
     
     @Override
     public List<FinanceRecord> getFinanceRecords(Date startDate, Date endDate) {
@@ -133,9 +139,25 @@ public class FinanceServiceImpl implements FinanceService {
             profitList.set(month, currentProfit.add(record.getProfit()));
         }
         
+        // Get monthly order data from OrderService
+        Map<String, List<?>> orderData = orderService.getMonthlyTypedOrderData(year);
+        
+        @SuppressWarnings("unchecked")
+        List<Integer> salesOrderQuantityList = (List<Integer>) orderData.get("salesOrderCounts");
+        @SuppressWarnings("unchecked")
+        List<Integer> purchaseOrderQuantityList = (List<Integer>) orderData.get("purchaseOrderCounts");
+        @SuppressWarnings("unchecked")
+        List<BigDecimal> salesTotalAmountList = (List<BigDecimal>) orderData.get("salesTotalAmounts");
+        @SuppressWarnings("unchecked")
+        List<BigDecimal> purchaseTotalAmountList = (List<BigDecimal>) orderData.get("purchaseTotalAmounts");
+        
         result.put("income", incomeList);
         result.put("expense", expenseList);
         result.put("profit", profitList);
+        result.put("salesOrderQuantity", salesOrderQuantityList);
+        result.put("purchaseOrderQuantity", purchaseOrderQuantityList);
+        result.put("salesTotalAmounts", salesTotalAmountList);
+        result.put("purchaseTotalAmounts", purchaseTotalAmountList);
         
         return result;
     }
