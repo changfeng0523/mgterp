@@ -137,6 +137,12 @@ const routes = [
         name: 'FIndex',
         component: () => import('../views/finance/index.vue'),
         meta: { title: '财务统计', icon: 'chart', keepAlive: true }
+      },
+      {
+        path: 'order-statistics',
+        name: 'OrderStatistics',
+        component: () => import('../views/finance/OrderStatistics.vue'),
+        meta: { title: '订单统计', icon: 'chart', keepAlive: true }
       }
     ]
   },

@@ -49,6 +49,20 @@
           <div id="finance-chart" style="width: 100%; height: 400px;"></div>
         </el-card>
       </div>
+
+      <!-- AI Insights Card -->
+      <el-card class="ai-insights-card" v-if="aiInsights || aiLoading" style="margin-top: 20px;">
+        <template #header>
+          <div class="card-header">
+            <span>智能业务洞察与建议</span>
+          </div>
+        </template>
+        <div v-if="aiLoading" v-loading="aiLoading" element-loading-text="AI分析中..." style="min-height: 100px; display: flex; align-items: center; justify-content: center;">
+          <el-empty description="AI正在分析数据..." :image-size="80"></el-empty>
+        </div>
+        <div v-else style="white-space: pre-wrap;">{{ aiInsights }}</div>
+      </el-card>
+
     </el-card>
 
     <!-- 财务记录表单对话框 -->
@@ -123,6 +137,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useFinanceStore } from '@/stores/finance'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
+import { sendNLIRequest } from '@/api/nli'
 
 const financeStore = useFinanceStore()
 
@@ -132,6 +147,10 @@ const loading = ref(false)
 const dialogVisible = ref(false)
 const dialogTitle = ref('添加财务记录')
 const submitLoading = ref(false)
+
+// AI Insights states
+const aiInsights = ref('');
+const aiLoading = ref(false);
 
 // 表单相关
 const formRef = ref(null)
@@ -149,28 +168,67 @@ const rules = {
   recordType: [{ required: true, message: '请选择类型', trigger: 'change' }]
 }
 
+const fetchAIInsightsForFinance = async () => {
+  if (!tableData.value || tableData.value.length === 0) {
+    aiInsights.value = '暂无足够数据进行分析。';
+    aiLoading.value = false; // Ensure loading is false if no data
+    return;
+  }
+  aiLoading.value = true;
+  aiInsights.value = ''; 
+
+  const dateRangeText = dateRange.value && dateRange.value.length === 2 
+    ? `${new Date(dateRange.value[0]).toLocaleDateString()} 到 ${new Date(dateRange.value[1]).toLocaleDateString()}` 
+    : '指定范围内';
+  
+  const dataSummary = tableData.value.slice(0, 5).map(d => 
+    `日期: ${d.date}, 收入: ${formatCurrency(d.income)}, 支出: ${formatCurrency(d.expense)}, 利润: ${formatCurrency(d.profit)}`
+  ).join('; ');
+
+  const query = `请基于以下 ${dateRangeText} 的财务数据摘要 (示例数据: ${dataSummary}) 以及整体财务图表趋势，分析当前的业务表现，指出主要的财务健康指标，识别潜在的风险点和增长机会，并提供3-5条具体的业务改进建议。请让建议具有可操作性。`;
+
+  try {
+    const response = await sendNLIRequest(query); 
+    if (response && response.reply) { 
+      aiInsights.value = response.reply; 
+    } else {
+      aiInsights.value = '未能获取AI洞察，请稍后再试。 (返回内容格式不符)';
+    }
+  } catch (error) {
+    console.error('获取财务AI洞察失败:', error);
+    aiInsights.value = '获取AI洞察时发生错误: ' + (error.message || '未知错误');
+  } finally {
+    aiLoading.value = false;
+  }
+};
+
 const fetchData = async () => {
   loading.value = true
+  aiInsights.value = ''; // Clear insights on new data fetch
+  aiLoading.value = false; // Reset AI loading state
   try {
     const { startDate, endDate } = getDateRange()
     const response = await financeStore.getFinanceData({ startDate, endDate })
 
-    // 处理后端返回的数据
     if (response && response.data) {
       tableData.value = response.data
       renderChart(response.data)
+      fetchAIInsightsForFinance(); // Call AI insights
     } else if (Array.isArray(response)) {
       tableData.value = response
       renderChart(response)
+      fetchAIInsightsForFinance(); // Call AI insights
     } else {
       tableData.value = []
       renderChart([])
+      aiInsights.value = '无财务数据可供分析。';
     }
   } catch (error) {
     console.error('获取财务数据失败:', error)
     ElMessage.error('获取财务数据失败')
     tableData.value = []
     renderChart([])
+    aiInsights.value = '获取财务数据失败，无法进行AI分析。';
   } finally {
     loading.value = false
   }
@@ -476,5 +534,13 @@ onMounted(() => {
   background-color: #F56C6C;
   border-color: #F56C6C;
   color: white;
+}
+
+.ai-insights-card .el-card__header {
+  background-color: #f5f7fa;
+  font-weight: bold;
+}
+.ai-insights-card .el-card__body div[v-loading] .el-loading-mask {
+  background-color: rgba(255, 255, 255, 0.8);
 }
 </style>
