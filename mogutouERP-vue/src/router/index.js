@@ -24,26 +24,25 @@ const routes = [
     meta: { hidden: true }
   },
   // 首页入口保持不变（重定向）
-{
-  path: '/',
-  component: Layout,
-  redirect: '/dashboard'
-},
+  {
+    path: '/',
+    component: Layout,
+    redirect: '/dashboard'
+  },
 
-// 控制台页面正式结构
-{
-  path: '/dashboard',
-  component: Layout,
-  children: [
-    {
-      path: '',
-      name: 'Dashboard',
-      component: () => import('../views/dashboard/index.vue'),
-      meta: { title: '控制台', icon: 'dashboard', keepAlive: true }
-    }
-  ]
-},
-
+  // 控制台页面正式结构
+  {
+    path: '/dashboard',
+    component: Layout,
+    children: [
+      {
+        path: '',
+        name: 'Dashboard',
+        component: () => import('../views/dashboard/index.vue'),
+        meta: { title: '控制台', icon: 'dashboard', keepAlive: true }
+      }
+    ]
+  },
 
   // 订单管理路由
   {
@@ -169,6 +168,31 @@ const routes = [
         name: 'IEdit',
         component: () => import('../views/inventory/edit.vue'),
         meta: { title: '编辑库存', hidden: true }
+      }
+    ]
+  },
+  // 个人中心和系统设置路由
+  {
+    path: '/profile',
+    component: Layout,
+    children: [
+      {
+        path: '',
+        name: 'Profile',
+        component: () => import('../views/profile/index.vue'),
+        meta: { title: '个人中心', icon: 'user', hidden: true }
+      }
+    ]
+  },
+  {
+    path: '/settings',
+    component: Layout,
+    children: [
+      {
+        path: '',
+        name: 'Settings',
+        component: () => import('../views/settings/index.vue'),
+        meta: { title: '系统设置', icon: 'setting', hidden: true }
       }
     ]
   },

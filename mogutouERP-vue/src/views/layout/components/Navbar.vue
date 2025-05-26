@@ -33,14 +33,18 @@
                 首页
               </el-dropdown-item>
             </router-link>
-            <el-dropdown-item>
-              <i class="el-icon-user"></i>
-              个人中心
-            </el-dropdown-item>
-            <el-dropdown-item>
-              <i class="el-icon-setting"></i>
-              系统设置
-            </el-dropdown-item>
+            <router-link to="/profile">
+              <el-dropdown-item>
+                <i class="el-icon-user"></i>
+                个人中心
+              </el-dropdown-item>
+            </router-link>
+            <router-link to="/settings">
+              <el-dropdown-item>
+                <i class="el-icon-setting"></i>
+                系统设置
+              </el-dropdown-item>
+            </router-link>
             <el-dropdown-item divided @click="logout">
               <i class="el-icon-switch-button"></i>
               退出登录

@@ -96,10 +96,16 @@ public class OrderService {
                         if (!existingGoods.isEmpty()) {
                             goodsItem = existingGoods.get(0);
                             log.info("使用现有商品: {}", goodsItem.getName());
+                            
+                            // 如果是销售订单，检查库存是否足够
+                            if ("SALE".equals(orderType) && goodsItem.getStock() < item.getQuantity()) {
+                                log.warn("商品库存不足: {}, 当前库存: {}, 需要: {}", 
+                                    goodsItem.getName(), goodsItem.getStock(), item.getQuantity());
+                            }
                         } else {
                             // 创建新商品
                             goodsItem.setCode("G" + System.currentTimeMillis());
-                            goodsItem.setStock(0);
+                            goodsItem.setStock(0); // 新商品初始库存为0，等待采购订单确认后才会增加库存
                             goodsItem.setStatus(1);
                             goodsItem = goodsRepository.save(goodsItem);
                             log.info("创建新商品: {}", goodsItem.getName());
@@ -164,6 +170,27 @@ public class OrderService {
         if ("COMPLETED".equals(order.getStatus())) {
             throw new RuntimeException("订单请勿重复确认");
         }
+        
+        // 如果是销售订单，先检查所有商品库存是否足够
+        if ("SALE".equals(order.getOrderType())) {
+            for (OrderGoods orderGoods : order.getGoods()) {
+                Goods goods = orderGoods.getGoods();
+                Integer quantity = orderGoods.getQuantity();
+                
+                // 检查库存
+                Inventory inventory = inventoryService.findByProductName(goods.getName());
+                if (inventory == null || inventory.getQuantity() < quantity) {
+                    String errorMsg = "库存不足，无法确认订单。商品: " + goods.getName();
+                    if (inventory != null) {
+                        errorMsg += ", 当前库存: " + inventory.getQuantity() + ", 需要: " + quantity;
+                    } else {
+                        errorMsg += ", 库存中未找到该商品";
+                    }
+                    log.error(errorMsg);
+                    throw new RuntimeException(errorMsg);
+                }
+            }
+        }
 
         // 订单确认后自动更新库存
         updateInventoryOnOrderConfirm(order);
@@ -197,6 +224,11 @@ public class OrderService {
                         quantity,
                         unitPrice
                     );
+                    
+                    // 同步更新Goods表中的库存数量
+                    goods.setStock(goods.getStock() + quantity);
+                    goodsRepository.save(goods);
+                    log.info("更新商品库存: 商品={}, 新库存={}", goods.getName(), goods.getStock());
                 } else if ("SALE".equals(order.getOrderType())) {
                     // 销售订单确认：减少库存
                     log.info("销售订单确认，减少库存: 商品={}, 数量={}", goods.getName(), quantity);
@@ -212,6 +244,16 @@ public class OrderService {
                         stockOutData.setId(inventory.getId());
                         stockOutData.setQuantity(quantity);
                         inventoryService.stockOut(stockOutData);
+                        
+                        // 同步更新Goods表中的库存数量
+                        if (goods.getStock() < quantity) {
+                            goods.setStock(0);
+                            log.warn("商品表库存数据不一致，已重置为0: 商品={}", goods.getName());
+                        } else {
+                            goods.setStock(goods.getStock() - quantity);
+                        }
+                        goodsRepository.save(goods);
+                        log.info("更新商品库存: 商品={}, 新库存={}", goods.getName(), goods.getStock());
                     } else {
                         throw new RuntimeException("库存中未找到商品: " + goods.getName());
                     }
