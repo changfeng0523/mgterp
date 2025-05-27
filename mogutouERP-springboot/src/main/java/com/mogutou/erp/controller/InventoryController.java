@@ -208,4 +208,5 @@ public class InventoryController {
             return Result.error(e.getMessage());
         }
     }
+
 }

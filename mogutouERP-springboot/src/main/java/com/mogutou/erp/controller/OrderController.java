@@ -42,23 +42,47 @@ public class OrderController {
     @PostMapping
     public Result<Order> createOrder(@RequestBody Order order) {
         try {
-            log.info("接收到订单创建请求，订单类型: {}", order.getType());
+            log.info("接收到订单创建请求，前端type: {}, orderType: {}", order.getType(), order.getOrderType());
             
             List<OrderGoods> goods = order.getGoods();
             if (goods == null || goods.isEmpty()) {
                 return Result.error("订单商品不能为空");
             }
             
-            // 确保订单类型参数正确传递给Service层
-            if (order.getType() == null && order.getOrderType() != null) {
-                order.setType(order.getOrderType().equalsIgnoreCase("SALE") ? "customer" : "purchase");
-            } else if (order.getType() != null && order.getOrderType() == null) {
-                order.setOrderType(order.getType().equalsIgnoreCase("customer") ? "SALE" : "PURCHASE");
+            // 强制设置正确的订单类型 - 关键修复
+            if (order.getType() != null) {
+                if ("customer".equalsIgnoreCase(order.getType())) {
+                    order.setOrderType("SALE");
+                    log.info("设置销售订单类型: SALE");
+                } else if ("purchase".equalsIgnoreCase(order.getType())) {
+                    order.setOrderType("PURCHASE");
+                    log.info("设置采购订单类型: PURCHASE");
+                } else {
+                    log.warn("未知的前端订单类型: {}, 默认设置为销售订单", order.getType());
+                    order.setOrderType("SALE");
+                }
+            } else if (order.getOrderType() != null) {
+                if ("SALE".equals(order.getOrderType())) {
+                    order.setType("customer");
+                } else if ("PURCHASE".equals(order.getOrderType())) {
+                    order.setType("purchase");
+                } else {
+                    log.warn("未知的订单类型: {}, 默认设置为销售订单", order.getOrderType());
+                    order.setOrderType("SALE");
+                    order.setType("customer");
+                }
+            } else {
+                // 都为空时，默认为销售订单
+                order.setOrderType("SALE");
+                order.setType("customer");
+                log.info("订单类型为空，默认设置为销售订单");
             }
+            
+            log.info("最终订单类型 - type: {}, orderType: {}", order.getType(), order.getOrderType());
             
             // 调用服务层创建订单
             Order createdOrder = orderService.createOrder(order, goods);
-            log.info("订单创建成功: ID={}", createdOrder.getId());
+            log.info("订单创建成功: ID={}, orderType={}", createdOrder.getId(), createdOrder.getOrderType());
             
             return Result.success(createdOrder);
         } catch (Exception e) {

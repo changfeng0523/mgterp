@@ -53,13 +53,19 @@ const classObj = computed(() => ({
 // 响应式布局处理
 const handleResize = () => {
   const width = document.documentElement.clientWidth
-  isMobile.value = width < 992
+  // 使用更严格的移动端判断：只有真正的移动设备才算移动端
+  // 检测是否为触屏设备 + 窄屏幕
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+  isMobile.value = width < 700 && isTouchDevice // 更严格的移动端判断
   
   // 设置应用的设备类型
   appStore.toggleDevice(isMobile.value ? 'mobile' : 'desktop')
   
   if (isMobile.value) {
     appStore.closeSideBar({ withoutAnimation: true })
+  } else {
+    // 在桌面端自动打开侧边栏
+    appStore.openSideBar({ withoutAnimation: true })
   }
 }
 

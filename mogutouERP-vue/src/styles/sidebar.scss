@@ -122,6 +122,14 @@
     .sidebar-container {
       transition: transform .28s;
       width: $sideBarWidth !important;
+      z-index: 999;
+      position: fixed;
+    }
+
+    &.openSidebar {
+      .sidebar-container {
+        transform: translate3d(0, 0, 0);
+      }
     }
 
     &.hideSidebar {
@@ -130,6 +138,16 @@
         transition-duration: 0.3s;
         transform: translate3d(-$sideBarWidth, 0, 0);
       }
+    }
+
+    // 移动端遮罩层
+    .drawer-bg {
+      background: rgba(0, 0, 0, 0.3);
+      width: 100%;
+      top: 0;
+      height: 100%;
+      position: absolute;
+      z-index: 999;
     }
   }
 

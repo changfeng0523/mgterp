@@ -51,16 +51,28 @@
       </div>
 
       <!-- AI Insights Card -->
-      <el-card class="ai-insights-card" v-if="aiInsights || aiLoading" style="margin-top: 20px;">
+      <el-card class="ai-insights-card" v-if="aiInsights || aiLoading || showAICard" style="margin-top: 20px;">
         <template #header>
-          <div class="card-header">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
             <span>智能业务洞察与建议</span>
+            <div v-if="!aiLoading">
+              <el-button size="small" type="primary" @click="fetchAIInsightsForFinance" :disabled="!tableData || tableData.length === 0">
+                重新分析
+              </el-button>
+            </div>
           </div>
         </template>
-        <div v-if="aiLoading" v-loading="aiLoading" element-loading-text="AI分析中..." style="min-height: 100px; display: flex; align-items: center; justify-content: center;">
-          <el-empty description="AI正在分析数据..." :image-size="80"></el-empty>
+        <div v-if="aiLoading" v-loading="aiLoading" element-loading-text="AI分析中，请耐心等待..." style="min-height: 100px; display: flex; align-items: center; justify-content: center;">
+          <el-empty description="AI正在深度分析财务数据..." :image-size="80"></el-empty>
         </div>
-        <div v-else style="white-space: pre-wrap;">{{ aiInsights }}</div>
+        <div v-else-if="aiInsights" style="white-space: pre-wrap;">{{ aiInsights }}</div>
+        <div v-else style="text-align: center; padding: 20px; color: #909399;">
+          <el-empty description="暂无AI洞察数据" :image-size="80">
+            <el-button type="primary" @click="fetchAIInsightsForFinance" :disabled="!tableData || tableData.length === 0">
+              获取AI洞察
+            </el-button>
+          </el-empty>
+        </div>
       </el-card>
 
     </el-card>
@@ -137,7 +149,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useFinanceStore } from '@/stores/finance'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
-import { sendNLIRequest } from '@/api/nli'
+import { sendNLIRequest, sendNLIRequestWithRetry } from '@/api/nli'
 
 const financeStore = useFinanceStore()
 
@@ -151,6 +163,7 @@ const submitLoading = ref(false)
 // AI Insights states
 const aiInsights = ref('');
 const aiLoading = ref(false);
+const showAICard = ref(true); // 总是显示AI卡片
 
 // 表单相关
 const formRef = ref(null)
@@ -171,9 +184,10 @@ const rules = {
 const fetchAIInsightsForFinance = async () => {
   if (!tableData.value || tableData.value.length === 0) {
     aiInsights.value = '暂无足够数据进行分析。';
-    aiLoading.value = false; // Ensure loading is false if no data
+    aiLoading.value = false;
     return;
   }
+  
   aiLoading.value = true;
   aiInsights.value = ''; 
 
@@ -188,15 +202,24 @@ const fetchAIInsightsForFinance = async () => {
   const query = `请基于以下 ${dateRangeText} 的财务数据摘要 (示例数据: ${dataSummary}) 以及整体财务图表趋势，分析当前的业务表现，指出主要的财务健康指标，识别潜在的风险点和增长机会，并提供3-5条具体的业务改进建议。请让建议具有可操作性。`;
 
   try {
-    const response = await sendNLIRequest(query); 
+    // 使用带重试机制的API调用
+    const response = await sendNLIRequestWithRetry(query); 
     if (response && response.reply) { 
       aiInsights.value = response.reply; 
     } else {
-      aiInsights.value = '未能获取AI洞察，请稍后再试。 (返回内容格式不符)';
+      aiInsights.value = '未能获取AI洞察，请稍后再试。';
     }
   } catch (error) {
     console.error('获取财务AI洞察失败:', error);
-    aiInsights.value = '获取AI洞察时发生错误: ' + (error.message || '未知错误');
+    
+    // 更详细的错误处理
+    if (error.code === 'ECONNABORTED') {
+      aiInsights.value = '⏰ AI分析请求超时，财务数据较复杂需要更多时间处理。\n\n建议：\n1. 减少分析的日期范围\n2. 稍后重新尝试\n3. 检查网络连接状态';
+    } else if (error.response?.status === 500) {
+      aiInsights.value = '🔧 AI服务暂时不可用，请稍后重试。\n\n如果问题持续存在，请联系技术支持。';
+    } else {
+      aiInsights.value = `❌ 获取AI洞察失败: ${error.message || '未知错误'}\n\n请检查网络连接或稍后重试。`;
+    }
   } finally {
     aiLoading.value = false;
   }

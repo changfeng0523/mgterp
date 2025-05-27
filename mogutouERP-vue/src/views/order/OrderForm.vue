@@ -228,8 +228,10 @@ const submitForm = async () => {
         orderNo: 'ORD' + new Date().getTime(), // 生成订单编号
         customerName: form.name,
         type: form.type, // customer 或 purchase
+        orderType: form.type === 'customer' ? 'SALE' : 'PURCHASE', // 明确设置orderType
         status: 'PENDING',
-        amount: form.totalAmount,
+        amount: form.totalAmount, // 使用amount字段
+        totalAmount: form.totalAmount, // 同时设置totalAmount字段保持兼容性
         goods: form.goods.map(item => {
           return {
             goods: {

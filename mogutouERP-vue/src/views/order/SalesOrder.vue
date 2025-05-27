@@ -8,7 +8,17 @@
         </div>
       </template>
       
-      <el-table :data="tableData" border style="width: 100%" v-loading="loading">
+      <div v-if="loading" class="loading-container">
+        <el-skeleton :rows="10" animated />
+      </div>
+      
+      <div v-else-if="tableData.length === 0" class="empty-container">
+        <el-empty description="暂无销售订单数据">
+          <el-button type="primary" @click="handleCreateOrder">创建销售订单</el-button>
+        </el-empty>
+      </div>
+      
+      <el-table v-else :data="tableData" border style="width: 100%">
         <el-table-column prop="id" label="订单ID" width="120" />
         <el-table-column prop="customerName" label="客户名称" width="180" />
         <el-table-column prop="totalAmount" label="总金额" width="120">
@@ -22,7 +32,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="createTime" label="创建时间" width="180" />
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="220">
           <template #default="scope">
             <el-button size="small" @click="handleViewDetail(scope.row)">详情</el-button>
             <el-button 
@@ -42,6 +52,7 @@
       </el-table>
       
       <el-pagination
+        v-if="tableData.length > 0"
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
         :current-page="currentPage"
@@ -52,14 +63,69 @@
         class="pagination"
       />
     </el-card>
+    
+    <!-- 订单详情对话框 -->
+    <el-dialog 
+      title="销售订单详情" 
+      v-model="detailDialogVisible" 
+      width="70%" 
+      destroy-on-close
+      :close-on-click-modal="false"
+      @closed="handleDialogClosed"
+    >
+      <el-descriptions :column="2" border>
+        <el-descriptions-item label="订单ID">{{ currentOrder.id }}</el-descriptions-item>
+        <el-descriptions-item label="客户名称">{{ currentOrder.customerName }}</el-descriptions-item>
+        <el-descriptions-item label="总金额">{{ getTotalAmount(currentOrder) }}</el-descriptions-item>
+        <el-descriptions-item label="状态">
+          <el-tag :type="getStatusType(currentOrder.status)">{{ getStatusText(currentOrder.status) }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ currentOrder.createTime }}</el-descriptions-item>
+      </el-descriptions>
+      
+      <div class="goods-list">
+        <h3>商品列表</h3>
+        <el-table :data="currentOrder.goods || []" border style="width: 100%">
+          <el-table-column prop="name" label="商品名称" />
+          <el-table-column prop="price" label="单价" />
+          <el-table-column prop="quantity" label="数量" />
+          <el-table-column prop="amount" label="金额" />
+        </el-table>
+      </div>
+    </el-dialog>
+    
+    <!-- 确认订单对话框 -->
+    <el-dialog 
+      title="确认销售订单" 
+      v-model="confirmDialogVisible" 
+      width="50%" 
+      destroy-on-close
+      :close-on-click-modal="false"
+      @closed="handleDialogClosed"
+    >
+      <el-form :model="confirmForm" label-width="120px">
+        <el-form-item label="实际发货日期">
+          <el-date-picker v-model="confirmForm.deliveryDate" type="date" placeholder="选择日期" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="confirmForm.remark" type="textarea" rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="confirmDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="submitConfirmOrder">确认</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, onActivated, onDeactivated, markRaw, h, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useOrderStore } from '@/store/modules/order'
-import { ElMessage, ElMessageBox, ElTable, ElTableColumn } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
 const orderStore = useOrderStore()
@@ -70,12 +136,17 @@ const pageSize = ref(10)
 const total = ref(0)
 const loading = ref(false)
 
-// 使用AbortController来处理请求中断
-let abortController = new AbortController()
+const detailDialogVisible = ref(false)
+const confirmDialogVisible = ref(false)
+const currentOrder = ref({})
+const confirmForm = ref({
+  deliveryDate: '',
+  remark: '',
+  freight: 0  // 添加运费参数，默认为0
+})
 
 // 格式化货币
 const formatCurrency = (value) => {
-  // 处理value为undefined或null的情况
   if (value === undefined || value === null || isNaN(value)) {
     return '¥0.00';
   }
@@ -89,15 +160,18 @@ const getTotalAmount = (row) => {
   return formatCurrency(amount);
 }
 
+// 使用AbortController来处理请求中断
+let abortController = new AbortController()
+
 const fetchData = async () => {
-  if (loading.value) return // 避免重复请求
-  
   try {
     loading.value = true
+    // 创建新的AbortController
+    abortController = new AbortController()
     
     console.log('开始获取销售订单数据, 页码:', currentPage.value, '每页数量:', pageSize.value)
     
-    // 不再使用 signal 参数
+    try {
     await orderStore.fetchCustormerOrders({
       page: currentPage.value - 1, // 后端页码从0开始
       size: pageSize.value
@@ -111,19 +185,26 @@ const fetchData = async () => {
       : []
     
     console.log('处理后的表格数据:', tableData.value)
+      console.log('表格数据长度:', tableData.value.length)
       
     // 使用 pagination 中的 totalElements
     total.value = orderStore.pagination.totalElements || 0
     
     console.log('销售订单总数:', total.value)
+      console.log('分页信息:', orderStore.pagination)
     
     // 检查每条数据的状态值
     tableData.value.forEach((item, index) => {
       console.log(`订单[${index}] ID=${item.id}, 状态=${item.status}, 客户=${item.customerName}, 总金额=${item.amount || item.totalAmount}`)
     })
   } catch (error) {
+      if (error.name !== 'AbortError') {
     console.error('获取销售订单列表失败:', error)
     ElMessage.error('获取销售订单列表失败')
+      }
+    }
+  } catch (error) {
+    console.error('fetchData 外层错误:', error)
   } finally {
     loading.value = false
   }
@@ -158,96 +239,43 @@ const getStatusText = (status) => {
 }
 
 const handleCreateOrder = () => {
-  // 先清理状态
-  resetComponentState()
-  
-  // 使用普通导航模式
   router.push('/order/create')
 }
 
 const handleViewDetail = (row) => {
-  // 使用全局对话框服务和h函数渲染
-  ElMessageBox({
-    title: '销售订单详情',
-    message: h('div', { class: 'detail-dialog' }, [
-      h('div', { class: 'order-info' }, [
-        h('div', { class: 'info-item' }, [
-          h('span', { class: 'label' }, '订单ID:'),
-          h('span', { class: 'value' }, row.id)
-        ]),
-        h('div', { class: 'info-item' }, [
-          h('span', { class: 'label' }, '客户名称:'),
-          h('span', { class: 'value' }, row.customerName)
-        ]),
-        h('div', { class: 'info-item' }, [
-          h('span', { class: 'label' }, '总金额:'),
-          h('span', { class: 'value' }, getTotalAmount(row))
-        ]),
-        h('div', { class: 'info-item' }, [
-          h('span', { class: 'label' }, '状态:'),
-          h('span', { class: 'value' }, [
-            h('el-tag', { type: getStatusType(row.status) }, getStatusText(row.status))
-          ])
-        ]),
-        h('div', { class: 'info-item' }, [
-          h('span', { class: 'label' }, '创建时间:'),
-          h('span', { class: 'value' }, row.createTime)
-        ])
-      ]),
-      h('div', { class: 'goods-list' }, [
-        h('h3', '商品列表'),
-        h(markRaw(ElTable), {
-          data: row.goods || [],
-          border: true,
-          style: 'width: 100%'
-        }, {
-          default: () => [
-            h(ElTableColumn, { prop: 'name', label: '商品名称' }),
-            h(ElTableColumn, { prop: 'price', label: '单价' }),
-            h(ElTableColumn, { prop: 'quantity', label: '数量' }),
-            h(ElTableColumn, { prop: 'amount', label: '金额' })
-          ]
-        })
-      ])
-    ]),
-    showCancelButton: false,
-    confirmButtonText: '关闭',
-    customClass: 'wide-dialog'
-  })
+  currentOrder.value = row
+  detailDialogVisible.value = true
 }
 
 const handleConfirmOrder = (row) => {
-  // 创建临时表单数据
-  const confirmForm = {
-    deliveryDate: new Date(),
+  currentOrder.value = row
+  confirmForm.value = {
+    deliveryDate: '',
     remark: '',
-    freight: 0  // 添加运费参数，默认为0
+    freight: 0
   }
-  
-  // 使用对话框服务确认订单，避免嵌套组件
-  ElMessageBox.confirm('确认此销售订单吗？确认后订单状态将改变', '确认销售订单', {
-    confirmButtonText: '确认',
-    cancelButtonText: '取消',
-    type: 'warning',
-    beforeClose: async (action, instance, done) => {
-      if (action === 'confirm') {
-        instance.confirmButtonLoading = true
+  confirmDialogVisible.value = true
+}
+
+const submitConfirmOrder = async () => {
         try {
-          await orderStore.confirmCustormerOrder(row.id, confirmForm)
-          ElMessage.success('订单确认成功')
+    await orderStore.confirmCustormerOrder(currentOrder.value.id, confirmForm.value)
+    ElMessage.success('销售订单确认成功')
+    confirmDialogVisible.value = false
           await fetchData()
-          done()
         } catch (error) {
-          console.error('订单确认失败:', error)
-          ElMessage.error('订单确认失败')
-        } finally {
-          instance.confirmButtonLoading = false
-        }
-      } else {
-        done()
-      }
-    }
-  })
+    console.error('确认销售订单失败:', error)
+    ElMessage.error('确认销售订单失败')
+  }
+}
+
+const handleDialogClosed = () => {
+  currentOrder.value = {}
+  confirmForm.value = {
+    deliveryDate: '',
+    remark: '',
+    freight: 0
+  }
 }
 
 const handleDeleteOrder = (row) => {
@@ -283,17 +311,13 @@ const handleCurrentChange = (val) => {
 // 重置组件状态
 const resetComponentState = () => {
   // 中止正在进行的请求
+  if (abortController) {
   abortController.abort()
+  }
   abortController = new AbortController()
   
   // 重置其他状态
   loading.value = false
-}
-
-// 添加路由离开前的钩子
-const onBeforeRouteLeave = (to, from, next) => {
-  resetComponentState()
-  next()
 }
 
 // 组件挂载时获取数据
@@ -301,24 +325,8 @@ onMounted(() => {
   fetchData()
 })
 
-// 组件激活时刷新数据（用于keep-alive）
-onActivated(() => {
-  console.log('销售订单组件激活')
-  fetchData()
-})
-
 // 组件卸载时清理
 onBeforeUnmount(() => {
-  resetComponentState()
-})
-
-// 使用Vue Router 4的路由钩子
-defineExpose({
-  onBeforeRouteLeave
-})
-
-// 当组件被停用时重置状态
-onDeactivated(() => {
   resetComponentState()
 })
 </script>

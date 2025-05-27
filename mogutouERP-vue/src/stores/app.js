@@ -11,6 +11,9 @@ export const useAppStore = defineStore('app', {
     closeSideBar({ withoutAnimation }) {
       this.sidebar.opened = false
     },
+    openSideBar({ withoutAnimation }) {
+      this.sidebar.opened = true
+    },
     toggleSideBar() {
       this.sidebar.opened = !this.sidebar.opened
     },

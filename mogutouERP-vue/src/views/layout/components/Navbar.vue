@@ -189,7 +189,7 @@ const logout = async () => {
 }
 
 // 移动设备适配
-@media screen and (max-width: 992px) {
+@media screen and (max-width: 768px) {
   .navbar {
     .breadcrumb-container {
       display: none;

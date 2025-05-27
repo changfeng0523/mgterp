@@ -39,7 +39,7 @@ const routes = [
         path: '',
         name: 'Dashboard',
         component: () => import('../views/dashboard/index.vue'),
-        meta: { title: '控制台', icon: 'dashboard', keepAlive: true }
+        meta: { title: 'AI助手', icon: 'ChatLineRound', keepAlive: true }
       }
     ]
   },
@@ -49,7 +49,7 @@ const routes = [
     path: '/order',
     component: Layout,
     redirect: '/order/sales',
-    meta: { title: '订单管理', icon: 'order' },
+    meta: { title: '订单管理', icon: 'ShoppingCart' },
     children: [
       {
         path: 'sales',
@@ -97,7 +97,7 @@ const routes = [
     path: '/company',
     component: Layout,
     redirect: '/company',
-    meta: { title: '公司', icon: 'company' },
+    meta: { title: '公司', icon: 'OfficeBuilding' },
     children: [
       {
         path: 'staff/:id',
@@ -129,19 +129,19 @@ const routes = [
     path: '/finance',
     component: Layout,
     redirect: '/finance/index',
-    meta: { title: '财务管理', icon: 'finance' },
+    meta: { title: '财务管理', icon: 'Money' },
     children: [
       {
         path: 'index',
         name: 'FIndex',
         component: () => import('../views/finance/index.vue'),
-        meta: { title: '财务统计', icon: 'chart', keepAlive: true }
+        meta: { title: '财务统计', keepAlive: true }
       },
       {
         path: 'order-statistics',
         name: 'OrderStatistics',
         component: () => import('../views/finance/OrderStatistics.vue'),
-        meta: { title: '订单统计', icon: 'chart', keepAlive: true }
+        meta: { title: '订单统计', keepAlive: true }
       }
     ]
   },
@@ -149,7 +149,7 @@ const routes = [
     path: '/inventory',
     component: Layout,
     redirect: '/inventory/index',
-    meta: { title: '库存', icon: 'inventory' },
+    meta: { title: '库存', icon: 'Box' },
     children: [
       {
         path: 'index',
@@ -180,7 +180,7 @@ const routes = [
         path: '',
         name: 'Profile',
         component: () => import('../views/profile/index.vue'),
-        meta: { title: '个人中心', icon: 'user', hidden: true }
+        meta: { title: '个人中心', icon: 'User', hidden: true }
       }
     ]
   },
@@ -192,7 +192,7 @@ const routes = [
         path: '',
         name: 'Settings',
         component: () => import('../views/settings/index.vue'),
-        meta: { title: '系统设置', icon: 'setting', hidden: true }
+        meta: { title: '系统设置', icon: 'Setting', hidden: true }
       }
     ]
   },

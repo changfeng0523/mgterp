@@ -122,7 +122,7 @@ public class InventoryServiceImpl implements InventoryService {
             newInventory.setUnitPrice(unitPrice);
             newInventory.setUnit("个"); // 默认单位
             newInventory.setLocation("默认仓库"); // 默认位置
-            newInventory.setWarningThreshold(5); // 默认预警阈值
+            // newInventory.setWarningThreshold(5); // 默认预警阈值 - 暂时注释掉
             return inventoryRepository.save(newInventory);
         }
     }

@@ -1,6 +1,7 @@
 package com.mogutou.erp.entity;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.time.LocalDateTime;
@@ -36,7 +37,21 @@ public class Order {
     @Column(name = "delivery_time")
     private LocalDateTime deliveryTime;
     
+    @Column(name = "amount")
+    @JsonProperty("amount")
     private Float amount = 0.0f;
+    
+    @Transient
+    @JsonProperty("totalAmount") 
+    public Float getTotalAmount() {
+        return this.amount;
+    }
+    
+    @JsonProperty("totalAmount")
+    public void setTotalAmount(Float totalAmount) {
+        this.amount = totalAmount;
+    }
+    
     private Float freight = 0.0f;
     
     @ManyToOne
@@ -47,9 +62,11 @@ public class Order {
     private String remarks;
     
     @Column(name = "created_at", updatable = false)
+    @JsonProperty("createTime")
     private LocalDateTime createdAt;
     
     @Column(name = "updated_at")
+    @JsonProperty("updateTime")
     private LocalDateTime updatedAt;
     
     @OneToMany(mappedBy = "order", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE}, fetch = FetchType.LAZY)

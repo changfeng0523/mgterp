@@ -57,7 +57,7 @@ public class OrderService {
 
     @Transactional
     public Order createOrder(Order order, List<OrderGoods> goods) {
-        log.info("开始创建订单，订单类型: {}", order.getOrderType());
+        log.info("开始创建订单，前端type: {}, orderType: {}", order.getType(), order.getOrderType());
 
         try {
             // 生成订单编号
@@ -67,7 +67,7 @@ public class OrderService {
                 log.info("生成订单编号: {}", order.getOrderNo());
             }
 
-            // 处理订单类型字段
+            // 确保订单类型正确设置 - 这是关键修复
             String orderType = order.getOrderType();
             if (orderType == null || orderType.isEmpty()) {
                 if (order.getType() != null) {
@@ -78,8 +78,25 @@ public class OrderService {
                     order.setOrderType("SALE"); // 默认为销售订单
                     log.info("设置默认订单类型: SALE");
                 }
+            } else {
+                // 验证和修正orderType值
+                if (!"SALE".equals(orderType) && !"PURCHASE".equals(orderType)) {
+                    if (order.getType() != null) {
+                        orderType = order.getType().equalsIgnoreCase("customer") ? "SALE" : "PURCHASE";
+                        order.setOrderType(orderType);
+                        log.warn("修正无效的订单类型，新类型: {}", orderType);
+                    } else {
+                        order.setOrderType("SALE");
+                        log.warn("修正无效的订单类型为默认值: SALE");
+                    }
+                }
             }
+            
+            log.info("最终订单类型: {}", order.getOrderType());
 
+            // 计算订单总金额
+            float totalAmount = 0.0f;
+            
             // 设置商品关联
             if (goods != null && !goods.isEmpty()) {
                 log.info("处理订单商品，数量: {}", goods.size());
@@ -101,18 +118,30 @@ public class OrderService {
                             if ("SALE".equals(orderType) && goodsItem.getStock() < item.getQuantity()) {
                                 log.warn("商品库存不足: {}, 当前库存: {}, 需要: {}", 
                                     goodsItem.getName(), goodsItem.getStock(), item.getQuantity());
+                                // 销售订单创建时只警告，不阻止创建，等确认时再严格检查
                             }
                         } else {
                             // 创建新商品
                             goodsItem.setCode("G" + System.currentTimeMillis());
-                            goodsItem.setStock(0); // 新商品初始库存为0，等待采购订单确认后才会增加库存
+                            goodsItem.setStock(0); // 新商品初始库存为0
                             goodsItem.setStatus(1);
+                            // 设置商品价格为订单中的单价
+                            if (item.getUnitPrice() != null) {
+                                goodsItem.setSellingPrice(item.getUnitPrice());
+                                goodsItem.setPurchasePrice(item.getUnitPrice());
+                            }
                             goodsItem = goodsRepository.save(goodsItem);
                             log.info("创建新商品: {}", goodsItem.getName());
                         }
                         item.setGoods(goodsItem);
                     }
 
+                    // 确保订单商品的价格信息正确
+                    if (item.getUnitPrice() != null && item.getQuantity() != null) {
+                        item.setTotalPrice(item.getUnitPrice() * item.getQuantity());
+                        totalAmount += item.getTotalPrice();
+                    }
+                    
                     item.setOrder(order);
                 }
                 order.setGoods(goods);
@@ -120,8 +149,17 @@ public class OrderService {
                 order.setGoods(new java.util.ArrayList<>());
             }
 
+            // 设置订单总金额
+            if (order.getAmount() == null || order.getAmount() == 0.0f) {
+                order.setAmount(totalAmount);
+                log.info("设置订单总金额: {}", totalAmount);
+            }
+
             // 保存订单
-            return orderRepository.save(order);
+            Order savedOrder = orderRepository.save(order);
+            log.info("订单保存成功: ID={}, 类型={}, 金额={}", savedOrder.getId(), savedOrder.getOrderType(), savedOrder.getAmount());
+            
+            return savedOrder;
         } catch (Exception e) {
             log.error("创建订单失败: {}", e.getMessage(), e);
             throw new RuntimeException("创建订单失败: " + e.getMessage(), e);
