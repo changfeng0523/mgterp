@@ -69,7 +69,7 @@ const userStore = useUserStore()
 const appStore = useAppStore()
 
 // 用户信息
-const name = computed(() => userStore.name || '用户')
+const name = computed(() => userStore.name || 'admin')
 const avatar = computed(() => userStore.avatar || 'https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png')
 
 // 侧边栏状态
