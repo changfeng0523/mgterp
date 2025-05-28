@@ -3,6 +3,7 @@ package com.mogutou.erp.service.impl;
 import com.mogutou.erp.entity.Inventory;
 import com.mogutou.erp.repository.InventoryRepository;
 import com.mogutou.erp.service.InventoryService;
+import com.mogutou.erp.common.CodeGenerator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +34,19 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     @Transactional
     public Inventory createInventory(Inventory inventory) {
+        // 如果商品编码为空，自动生成
+        if (inventory.getProductCode() == null || inventory.getProductCode().trim().isEmpty()) {
+            String generatedCode;
+            if (inventory.getCategory() != null && !inventory.getCategory().trim().isEmpty()) {
+                // 根据分类生成编码
+                generatedCode = CodeGenerator.generateProductCodeByCategory(inventory.getCategory());
+            } else {
+                // 使用默认编码格式
+                generatedCode = CodeGenerator.generateProductCode();
+            }
+            inventory.setProductCode(generatedCode);
+        }
+        
         return inventoryRepository.save(inventory);
     }
 
@@ -117,7 +131,14 @@ public class InventoryServiceImpl implements InventoryService {
             // 如果不存在，创建新的库存记录
             Inventory newInventory = new Inventory();
             newInventory.setProductName(productName);
-            newInventory.setProductCode(productCode != null ? productCode : ""); // 编号为空
+            
+            // 如果没有提供编码或编码为空，自动生成
+            if (productCode == null || productCode.trim().isEmpty()) {
+                newInventory.setProductCode(CodeGenerator.generateProductCode());
+            } else {
+                newInventory.setProductCode(productCode);
+            }
+            
             newInventory.setQuantity(quantity);
             newInventory.setUnitPrice(unitPrice);
             newInventory.setUnit("个"); // 默认单位

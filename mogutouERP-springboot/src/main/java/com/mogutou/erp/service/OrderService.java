@@ -390,4 +390,18 @@ public class OrderService {
         result.put("purchaseTotalAmounts", purchaseTotalAmounts);
         return result;
     }
+
+    /**
+     * 根据ID获取订单详情
+     */
+    @Transactional(readOnly = true)
+    public Order getOrderById(Long id) {
+        log.info("获取订单详情: id={}", id);
+        try {
+            return orderRepository.findById(id).orElse(null);
+        } catch (Exception e) {
+            log.error("获取订单详情失败: {}", e.getMessage(), e);
+            throw new RuntimeException("获取订单详情失败: " + e.getMessage(), e);
+        }
+    }
 }

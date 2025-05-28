@@ -216,6 +216,7 @@ const getStatusType = (status) => {
     '已确认': 'success',
     '已取消': 'info',
     '已完成': 'primary',
+    '待收款': 'warning',
     'PENDING': 'warning',
     'PROCESSING': 'success',
     'COMPLETED': 'primary',
@@ -230,6 +231,7 @@ const getStatusText = (status) => {
     '已确认': '已确认',
     '已取消': '已取消',
     '已完成': '已完成',
+    '待收款': '待收款',
     'PENDING': '待确认',
     'PROCESSING': '处理中',
     'COMPLETED': '已完成',
@@ -242,9 +244,23 @@ const handleCreateOrder = () => {
   router.push('/order/create')
 }
 
-const handleViewDetail = (row) => {
-  currentOrder.value = row
-  detailDialogVisible.value = true
+const handleViewDetail = async (row) => {
+  try {
+    loading.value = true
+    const api = orderStore.useOrderApi ? orderStore.useOrderApi() : { getOrderDetail: (id) => orderStore.getOrderDetail(id) }
+    const response = await api.getOrderDetail(row.id)
+    currentOrder.value = response.data || response
+    console.log('获取到的订单详情:', currentOrder.value)
+    detailDialogVisible.value = true
+  } catch (error) {
+    console.error('获取订单详情失败:', error)
+    ElMessage.error('获取订单详情失败')
+    // 降级处理：使用列表中的数据
+    currentOrder.value = row
+    detailDialogVisible.value = true
+  } finally {
+    loading.value = false
+  }
 }
 
 const handleConfirmOrder = (row) => {

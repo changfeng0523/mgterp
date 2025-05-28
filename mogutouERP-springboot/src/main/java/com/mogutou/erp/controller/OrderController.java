@@ -120,4 +120,24 @@ public class OrderController {
             return Result.error("获取订单列表失败: " + e.getMessage());
         }
     }
+
+    /**
+     * 获取订单详情
+     */
+    @GetMapping("/{id}")
+    public Result<Order> getOrderDetail(@PathVariable Long id) {
+        try {
+            log.info("获取订单详情: id={}", id);
+            Order order = orderService.getOrderById(id);
+            if (order == null) {
+                return Result.error("订单不存在");
+            }
+            log.info("成功获取订单详情: ID={}, 商品数量={}", order.getId(), 
+                order.getGoods() != null ? order.getGoods().size() : 0);
+            return Result.success(order);
+        } catch (Exception e) {
+            log.error("获取订单详情失败: {}", e.getMessage(), e);
+            return Result.error("获取订单详情失败: " + e.getMessage());
+        }
+    }
 }

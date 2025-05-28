@@ -1,6 +1,7 @@
 package com.mogutou.erp.entity;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.time.LocalDateTime;
@@ -18,17 +19,24 @@ public class OrderGoods {
     @JsonBackReference
     private Order order;
     
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "goods_id")
     private Goods goods;
     
     private Integer quantity;
     
     @Column(name = "unit_price")
+    @JsonProperty("price")
     private Float unitPrice;
     
     @Column(name = "total_price")
+    @JsonProperty("amount")
     private Float totalPrice;
+    
+    @JsonProperty("name")
+    public String getName() {
+        return goods != null ? goods.getName() : "";
+    }
     
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

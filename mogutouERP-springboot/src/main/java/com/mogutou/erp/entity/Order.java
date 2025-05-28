@@ -69,7 +69,7 @@ public class Order {
     @JsonProperty("updateTime")
     private LocalDateTime updatedAt;
     
-    @OneToMany(mappedBy = "order", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE}, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "order", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE}, fetch = FetchType.EAGER)
     @JsonManagedReference
     private List<OrderGoods> goods = new java.util.ArrayList<>();
     

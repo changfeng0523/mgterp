@@ -18,11 +18,15 @@
         <el-form-item label="商品编码" prop="productCode">
           <el-input
             v-model="form.productCode"
-            placeholder="请输入商品编码"
+            placeholder="系统将自动生成商品编码"
             clearable
             autocomplete="off"
-            :disabled="loading"
+            :disabled="true"
+            readonly
           />
+          <div class="form-tip">
+            商品编码将根据分类自动生成，无需手动输入
+          </div>
         </el-form-item>
 
         <el-form-item label="数量" prop="quantity">
@@ -137,10 +141,6 @@ const rules = {
     { required: true, message: '请输入商品名称', trigger: 'blur' },
     { min: 1, max: 50, message: '商品名称长度应在1-50个字符之间', trigger: 'blur' }
   ],
-  productCode: [
-    { required: true, message: '请输入商品编码', trigger: 'blur' },
-    { min: 1, max: 30, message: '商品编码长度应在1-30个字符之间', trigger: 'blur' }
-  ],
   quantity: [
     { required: true, message: '请输入数量', trigger: 'change' },
     { type: 'number', min: 0, message: '数量必须大于等于0', trigger: 'change' }
@@ -167,7 +167,6 @@ const handleSubmit = async () => {
     try {
       const inventoryData = {
         productName: form.value.productName.trim(),
-        productCode: form.value.productCode.trim(),
         quantity: parseInt(form.value.quantity),
         unit: form.value.unit.trim(),
         unitPrice: parseFloat(form.value.unitPrice),

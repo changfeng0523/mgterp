@@ -421,6 +421,21 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
         try {
             System.out.println("🧠 启动超智能订单分析: " + root.toString());
             
+            // 🔍 检查是否为确认执行（用户已确认）
+            boolean isConfirmedExecution = false;
+            
+            // 方法1：检查是否有会话上下文且信息完整
+            OrderContext existingContext = getOrderContext(sessionId);
+            if (existingContext != null) {
+                String validation = validateOrderContext(existingContext);
+                if (validation.isEmpty()) {
+                    // 上下文完整，说明这是确认执行
+                    isConfirmedExecution = true;
+                    System.out.println("✅ 检测到完整上下文，直接执行订单创建");
+                    return completeOrderCreation(existingContext, sessionId);
+                }
+            }
+            
             // 🔍 第一步：基础信息提取
             String originalInput = root.has("original_input") ? root.get("original_input").asText() : "";
             String orderType = smartExtractOrderType(root);
@@ -494,14 +509,17 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
         } else {
             // 检查商品详细信息
             boolean hasMissingPrice = false;
+            boolean hasIncompleteProduct = false;
             List<String> incompleteProducts = new ArrayList<>();
             
             for (ProductInfo product : context.getProductList()) {
                 if (product.name.isEmpty()) {
                     incompleteProducts.add("商品名称");
+                    hasIncompleteProduct = true;
                 }
                 if (product.quantity <= 0) {
                     incompleteProducts.add("商品数量");
+                    hasIncompleteProduct = true;
                 }
                 // 检查价格是否为0或负数
                 if (product.unitPrice <= 0) {
@@ -509,13 +527,14 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
                 }
             }
             
-            if (!incompleteProducts.isEmpty()) {
+            // 只有当商品信息真正不完整时才询问商品信息
+            if (hasIncompleteProduct) {
                 missingItems.addAll(incompleteProducts);
                 questions.add("📝 商品信息不完整，请补充" + String.join("、", incompleteProducts));
             }
             
-            // 单独处理价格缺失情况
-            if (hasMissingPrice) {
+            // 单独处理价格缺失情况（只有当商品基本信息完整时才询问价格）
+            if (hasMissingPrice && !hasIncompleteProduct) {
                 missingItems.add("商品价格");
                 
                 // 根据订单类型提供不同的价格询问
@@ -573,12 +592,12 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
                 if (!context.getProductList().isEmpty()) {
                     String productName = context.getProductList().get(0).name;
                     if (!productName.isEmpty()) {
-                        response.append("\n'").append(productName).append("单价5元' 或 '每个3元'");
+                        response.append("\n'").append(productName).append("单价5000元' 或 '每台8000元'");
                     } else {
-                        response.append("\n'单价3元/个' 或 '每个5元'");
+                        response.append("\n'单价3000元/台' 或 '每台5000元'");
                     }
                 } else {
-                    response.append("\n'单价3元/个' 或 '每个5元'");
+                    response.append("\n'单价3000元/台' 或 '每台5000元'");
                 }
             }
             
@@ -1090,7 +1109,7 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             }
         }
         
-        confirmation.append("\n💬 确认创建请回复：'确认' 或 '是的'\n");
+        confirmation.append("\n💬 确认创建请回复：'是'\n");
         confirmation.append("💬 需要修改请直接说明：'客户改为XX' 或 '价格改为XX元'");
         
         return confirmation.toString();
@@ -2020,6 +2039,11 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
         
         // 大幅扩展商品名提取：涵盖更多常见商品
         String[] productPatterns = {
+            // 🆕 电子产品类（新增）- 优先匹配更具体的名称
+            "(服务器|路由器|交换机|投影仪|扫描仪|打印机)",  // 优先级1：最具体的设备
+            "(笔记本|台式机|显示器|键盘|鼠标|音响|耳机|手机|平板)",  // 优先级2：具体设备
+            "(电脑|计算机)",  // 优先级3：通用计算设备
+            
             // 饮品类
             "(水|饮用水|矿泉水|纯净水|饮料|可乐|雪碧|果汁|茶|咖啡|奶茶|豆浆)",
             
@@ -2040,6 +2064,12 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             
             // 日用品类
             "(纸巾|卫生纸|洗发水|沐浴露|牙膏|牙刷|毛巾|香皂|洗衣粉|洗洁精)",
+            
+            // 🆕 办公用品类（新增）
+            "(桌子|椅子|文件柜|书架|白板|投影屏|办公桌|会议桌|复印纸|笔|本子|文件夹)",
+            
+            // 🆕 家具家电类（新增）
+            "(冰箱|洗衣机|空调|电视|沙发|床|衣柜|餐桌|微波炉|电饭煲|热水器)",
             
             // 通用商品词
             "([\\u4e00-\\u9fa5]{1,4}(?:商品|产品|货物|物品|用品))",  // XX商品、XX产品等
@@ -2076,6 +2106,11 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             "(\\d+)\\s*箱\\s*" + productName,               // 5箱饮料
             "(\\d+)\\s*斤\\s*" + productName,               // 5斤苹果
             "(\\d+)\\s*公斤\\s*" + productName,             // 5公斤米
+            "(\\d+)\\s*台\\s*" + productName,               // 🆕 5台电脑
+            "(\\d+)\\s*部\\s*" + productName,               // 🆕 5部手机
+            "(\\d+)\\s*套\\s*" + productName,               // 🆕 5套设备
+            "(\\d+)\\s*张\\s*" + productName,               // 🆕 5张桌子
+            "(\\d+)\\s*把\\s*" + productName,               // 🆕 5把椅子
             
             // 🆕 新增：数字+单位+商品的模式
             "([一二三四五六七八九十]|\\d+)\\s*瓶\\s*" + productName,     // 三瓶水
@@ -2084,11 +2119,19 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             "([一二三四五六七八九十]|\\d+)\\s*只\\s*" + productName,      // 两只鸡
             "([一二三四五六七八九十]|\\d+)\\s*袋\\s*" + productName,      // 一袋米
             "([一二三四五六七八九十]|\\d+)\\s*箱\\s*" + productName,      // 六箱饮料
+            "([一二三四五六七八九十]|\\d+)\\s*台\\s*" + productName,      // 🆕 一百台电脑
+            "([一二三四五六七八九十]|\\d+)\\s*部\\s*" + productName,      // 🆕 五部手机
+            "([一二三四五六七八九十]|\\d+)\\s*套\\s*" + productName,      // 🆕 三套设备
+            "([一二三四五六七八九十]|\\d+)\\s*张\\s*" + productName,      // 🆕 十张桌子
+            "([一二三四五六七八九十]|\\d+)\\s*把\\s*" + productName,      // 🆕 五把椅子
             
             // 倒序模式：商品+数量
             productName + "\\s*(\\d+)\\s*个",               // 水5个
             productName + "\\s*(\\d+)\\s*瓶",               // 水5瓶
             productName + "\\s*(\\d+)\\s*件",               // 商品5件
+            productName + "\\s*(\\d+)\\s*台",               // 🆕 电脑5台
+            productName + "\\s*(\\d+)\\s*部",               // 🆕 手机5部
+            productName + "\\s*(\\d+)\\s*套",               // 🆕 设备5套
             
             // 灵活的中文表达
             "(\\d+)\\s*" + productName,                     // 5水（简化表达）
@@ -2096,10 +2139,13 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             "买\\s*(\\d+)\\s*" + productName,              // 买5个水
             "要\\s*(\\d+)\\s*" + productName,              // 要5瓶水
             "需要\\s*(\\d+)\\s*" + productName,            // 需要5件商品
+            "买了\\s*(\\d+)\\s*台\\s*" + productName,       // 🆕 买了100台电脑
+            "买了\\s*(\\d+)\\s*部\\s*" + productName,       // 🆕 买了5部手机
+            "买了\\s*(\\d+)\\s*套\\s*" + productName,       // 🆕 买了3套设备
             
             // 通用数量模式
             "数量\\s*(\\d+)",                               // 数量5
-            "(\\d+)\\s*(?:个|瓶|件|只|袋|箱|斤|公斤)",      // 数字+单位
+            "(\\d+)\\s*(?:个|瓶|件|只|袋|箱|斤|公斤|台|部|套|张|把)",      // 🆕 扩展单位
         };
         
         for (String pattern : quantityPatterns) {
@@ -2264,9 +2310,101 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             case "十八": return 18;
             case "十九": return 19;
             case "二十": return 20;
+            // 🆕 新增更大数字支持
+            case "三十": return 30;
+            case "四十": return 40;
+            case "五十": return 50;
+            case "六十": return 60;
+            case "七十": return 70;
+            case "八十": return 80;
+            case "九十": return 90;
+            case "一百": return 100;
+            case "二百": return 200;
+            case "三百": return 300;
+            case "四百": return 400;
+            case "五百": return 500;
+            case "六百": return 600;
+            case "七百": return 700;
+            case "八百": return 800;
+            case "九百": return 900;
+            case "一千": return 1000;
             default:
-                // 对于复杂的中文数字，返回0表示无法解析
-                return 0;
+                // 🆕 支持组合数字如"二十三"、"一百五十"等
+                return parseComplexChineseNumber(chineseNum);
+        }
+    }
+    
+    /**
+     * 🆕 解析复杂的中文数字组合
+     */
+    private int parseComplexChineseNumber(String chineseNum) {
+        try {
+            // 处理"XX十Y"格式，如"二十三"
+            if (chineseNum.contains("十") && chineseNum.length() <= 3) {
+                if (chineseNum.startsWith("十")) {
+                    // "十三" = 13
+                    String remainder = chineseNum.substring(1);
+                    return 10 + convertSingleDigit(remainder);
+                } else {
+                    // "二十三" = 23
+                    String[] parts = chineseNum.split("十");
+                    if (parts.length == 2) {
+                        int tens = convertSingleDigit(parts[0]) * 10;
+                        int ones = parts[1].isEmpty() ? 0 : convertSingleDigit(parts[1]);
+                        return tens + ones;
+                    }
+                }
+            }
+            
+            // 处理"XX百YY"格式，如"一百五十"
+            if (chineseNum.contains("百")) {
+                String[] parts = chineseNum.split("百");
+                if (parts.length >= 1) {
+                    int hundreds = convertSingleDigit(parts[0]) * 100;
+                    if (parts.length == 2 && !parts[1].isEmpty()) {
+                        int remainder = parseComplexChineseNumber(parts[1]);
+                        return hundreds + remainder;
+                    }
+                    return hundreds;
+                }
+            }
+            
+            // 处理"XX千YYY"格式
+            if (chineseNum.contains("千")) {
+                String[] parts = chineseNum.split("千");
+                if (parts.length >= 1) {
+                    int thousands = convertSingleDigit(parts[0]) * 1000;
+                    if (parts.length == 2 && !parts[1].isEmpty()) {
+                        int remainder = parseComplexChineseNumber(parts[1]);
+                        return thousands + remainder;
+                    }
+                    return thousands;
+                }
+            }
+            
+        } catch (Exception e) {
+            // 解析失败，返回0
+        }
+        
+        // 无法解析的复杂数字，返回0
+        return 0;
+    }
+    
+    /**
+     * 🆕 转换单个中文数字字符
+     */
+    private int convertSingleDigit(String digit) {
+        switch (digit) {
+            case "一": return 1;
+            case "二": return 2;
+            case "三": return 3;
+            case "四": return 4;
+            case "五": return 5;
+            case "六": return 6;
+            case "七": return 7;
+            case "八": return 8;
+            case "九": return 9;
+            default: return 0;
         }
     }
 } 

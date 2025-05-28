@@ -77,6 +77,10 @@ export function useOrderApi() {
     getPurchaseOrders(params = { page: 0, size: 10 }) {
       return getOrdersByType('purchase', params)
     },
+    // 获取订单详情
+    getOrderDetail(id) {
+      return getOrderDetail(id)
+    },
     // 创建采购订单
     createPurchaseOrder(data) {
       return createOrder({ ...data, type: 'purchase' })

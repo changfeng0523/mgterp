@@ -186,6 +186,21 @@ export const useOrderStore = defineStore('order', {
       } catch (error) {
         throw error
       }
+    },
+    
+    // 获取订单详情
+    async getOrderDetail(id) {
+      try {
+        const api = useOrderApi()
+        return await api.getOrderDetail(id)
+      } catch (error) {
+        throw error
+      }
+    },
+    
+    // 暴露API方法
+    useOrderApi() {
+      return useOrderApi()
     }
   }
 })

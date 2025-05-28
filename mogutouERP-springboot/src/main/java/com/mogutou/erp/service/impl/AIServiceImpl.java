@@ -44,6 +44,10 @@ public class AIServiceImpl implements AIService {
         "analyze_order", "订单数据分析"
     );
 
+    // 添加会话管理
+    private final Map<String, Long> sessionTimestamps = new HashMap<>();
+    private static final long SESSION_TIMEOUT = 5 * 60 * 1000; // 5分钟会话超时
+
     @Override
     public AIResponse parseAndExecute(String input, boolean confirmed) {
         try {
@@ -184,16 +188,30 @@ public class AIServiceImpl implements AIService {
                     "• '查询李四的订单'", false);
             }
             
-            // 增强JSON节点信息（添加原始输入便于调试）
+            // 增强JSON节点信息（添加原始输入和会话ID便于调试）
             if (commandNode instanceof com.fasterxml.jackson.databind.node.ObjectNode) {
                 ((com.fasterxml.jackson.databind.node.ObjectNode) commandNode)
                     .put("original_input", input);
+                
+                // 为订单创建操作添加会话ID，确保上下文能够共享
+                if ("create_order".equals(action)) {
+                    // 生成或使用现有的会话ID
+                    String sessionId = generateSessionId(input);
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) commandNode)
+                        .put("session_id", sessionId);
+                    System.out.println("🔗 设置会话ID: " + sessionId);
+                }
             }
             
             // 危险操作确认（仅删除操作需要确认）
             if (isDangerous(action) && !confirmed) {
                 String confirmMessage = generateSimpleConfirmMessage(action, commandNode, input);
                 return new AIResponse(confirmMessage, true);
+            }
+            
+            // 🆕 如果用户已经确认，直接执行，不再进行额外检查
+            if (confirmed) {
+                System.out.println("✅ 用户已确认，直接执行指令: " + action);
             }
             
             // 执行指令
@@ -203,6 +221,15 @@ public class AIServiceImpl implements AIService {
             // 智能结果处理
             if (result == null || result.trim().isEmpty()) {
                 result = "✅ 操作已完成";
+            }
+            
+            // 🔧 智能检测是否为确认信息（需要用户确认）
+            boolean isConfirmationMessage = isConfirmationMessage(result);
+            
+            if (isConfirmationMessage && !confirmed) {
+                // 这是确认信息，需要用户确认
+                System.out.println("📋 检测到确认信息，等待用户确认");
+                return new AIResponse(result, true); // needConfirm = true
             }
             
             // 生成增强的友好回复
@@ -494,6 +521,83 @@ public class AIServiceImpl implements AIService {
             case "analyze_finance" -> "📊";
             default -> "🤖";
         };
+    }
+
+    /**
+     * 生成会话ID，用于维护对话上下文
+     */
+    private String generateSessionId(String input) {
+        // 清理过期会话
+        cleanupExpiredSessions();
+        
+        // 对于订单创建，使用统一的会话ID前缀，在短时间内共享上下文
+        String sessionPrefix = "order_creation";
+        long currentTime = System.currentTimeMillis();
+        
+        // 检查是否有活跃的订单创建会话
+        for (Map.Entry<String, Long> entry : sessionTimestamps.entrySet()) {
+            if (entry.getKey().startsWith(sessionPrefix) && 
+                (currentTime - entry.getValue()) < SESSION_TIMEOUT) {
+                // 更新时间戳并复用会话
+                sessionTimestamps.put(entry.getKey(), currentTime);
+                System.out.println("🔄 复用现有会话: " + entry.getKey());
+                return entry.getKey();
+            }
+        }
+        
+        // 创建新会话
+        String newSessionId = sessionPrefix + "_" + (currentTime / 1000);
+        sessionTimestamps.put(newSessionId, currentTime);
+        System.out.println("🆕 创建新会话: " + newSessionId);
+        return newSessionId;
+    }
+    
+    /**
+     * 清理过期会话
+     */
+    private void cleanupExpiredSessions() {
+        long currentTime = System.currentTimeMillis();
+        sessionTimestamps.entrySet().removeIf(entry -> 
+            (currentTime - entry.getValue()) > SESSION_TIMEOUT);
+    }
+
+    /**
+     * 🔧 智能检测是否为确认信息
+     * 用于判断CommandExecutor返回的结果是确认信息还是执行完成信息
+     */
+    private boolean isConfirmationMessage(String result) {
+        if (result == null || result.trim().isEmpty()) {
+            return false;
+        }
+        
+        String lowerResult = result.toLowerCase();
+        
+        // 确认信息的典型特征
+        String[] confirmationPatterns = {
+            "请确认", "确认创建", "确认订单", "confirm", 
+            "💬 确认", "回复：'确认'", "回复'确认'",
+            "需要修改请直接说明", "确认信息", "订单信息：",
+            "📋 请确认", "💵 总金额：", "商品明细："
+        };
+        
+        // 检查是否包含确认关键词
+        for (String pattern : confirmationPatterns) {
+            if (lowerResult.contains(pattern.toLowerCase())) {
+                return true;
+            }
+        }
+        
+        // 检查是否包含"确认"+"订单"的组合
+        if (lowerResult.contains("确认") && lowerResult.contains("订单")) {
+            return true;
+        }
+        
+        // 检查是否包含价格明细格式（通常出现在确认信息中）
+        if (lowerResult.contains("¥") && lowerResult.contains("×") && lowerResult.contains("@")) {
+            return true;
+        }
+        
+        return false;
     }
 
     /**
