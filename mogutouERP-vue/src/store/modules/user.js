@@ -31,7 +31,7 @@ export const useUserStore = defineStore('user', {
         const data = response
         if (data.roles && data.roles.length > 0) {
           this.roles = data.roles
-          this.name = data.name
+          this.name = data.username || data.name  // 优先使用username字段
           this.avatar = data.avatar
         } else {
           throw new Error('getInfo: roles must be a non-null array !')

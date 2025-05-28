@@ -53,6 +53,12 @@ public class AIServiceImpl implements AIService {
         try {
             System.out.println("🎯 处理用户输入: " + input + " (已确认: " + confirmed + ")");
             
+            // 显式检测是否指向通用AI能力的请求
+            if (isGeneralAIQuery(input) && !confirmed) {
+                System.out.println("🧠 检测到通用AI问答请求，直接使用对话模式");
+                return handleConversation(input);
+            }
+            
             // 第一步：智能意图识别
             IntentResult intent = analyzeIntent(input);
             
@@ -127,28 +133,57 @@ public class AIServiceImpl implements AIService {
     private IntentResult fallbackIntentAnalysis(String input) {
         String lowerInput = input.toLowerCase();
         
+        // ERP指令关键词 - 更全面的业务关键词列表
+        String[] erpKeywords = {
+            // 订单操作
+            "创建订单", "新订单", "下单", "采购", "销售", "出售", "买", "卖", "供应商", "客户订单",
+            "删除订单", "取消订单", "订单查询", "查询订单", "确认订单", "完成订单",
+            // 库存操作
+            "库存", "入库", "出库", "盘点", "商品", "产品", "材料",
+            // 财务操作
+            "财务", "金额", "账单", "收款", "付款", "报表", "利润", "成本",
+            // 分析操作
+            "统计数据", "分析订单", "分析销售", "分析趋势"
+        };
+        
         // 快速识别常用指令模式
         if (lowerInput.contains("分析") && (lowerInput.contains("订单") || lowerInput.contains("这些"))) {
             System.out.println("🎯 快速识别: 订单分析指令");
             return new IntentResult(IntentType.COMMAND, 0.95, "分析订单");
         }
         
-        // 指令关键词
-        String[] commandKeywords = {"创建", "查询", "删除", "修改", "统计", "分析", "导出", "确认", "添加"};
-        boolean hasCommandKeyword = Arrays.stream(commandKeywords)
+        // ERP业务相关检测
+        boolean isErpCommand = Arrays.stream(erpKeywords)
+            .anyMatch(keyword -> lowerInput.contains(keyword));
+        
+        // 通用指令关键词
+        String[] generalCommandKeywords = {"创建", "查询", "删除", "修改", "统计", "分析", "导出", "确认", "添加"};
+        boolean hasCommandKeyword = Arrays.stream(generalCommandKeywords)
             .anyMatch(keyword -> lowerInput.contains(keyword));
         
         // 对话关键词
-        String[] conversationKeywords = {"你好", "谢谢", "再见", "怎么样", "是什么", "为什么", "天气"};
+        String[] conversationKeywords = {
+            "你好", "谢谢", "再见", "怎么样", "是什么", "为什么", "你能", "能不能",
+            "？", "帮我", "请问", "如何", "怎么", "帮我", "认为", "觉得", "聊聊"
+        };
         boolean hasConversationKeyword = Arrays.stream(conversationKeywords)
             .anyMatch(keyword -> lowerInput.contains(keyword));
         
-        if (hasCommandKeyword && hasConversationKeyword) {
+        // 当确定是ERP指令
+        if (isErpCommand) {
+            return new IntentResult(IntentType.COMMAND, 0.95, input);
+        }
+        // 混合意图检测
+        else if (hasCommandKeyword && hasConversationKeyword) {
             return new IntentResult(IntentType.MIXED, 0.8, input);
-        } else if (hasCommandKeyword) {
-            return new IntentResult(IntentType.COMMAND, 0.9, input);
-        } else {
-            return new IntentResult(IntentType.CONVERSATION, 0.7, "");
+        } 
+        // 可能是一般指令
+        else if (hasCommandKeyword) {
+            return new IntentResult(IntentType.COMMAND, 0.7, input);
+        } 
+        // 默认为对话
+        else {
+            return new IntentResult(IntentType.CONVERSATION, 0.8, "");
         }
     }
 
@@ -180,12 +215,9 @@ public class AIServiceImpl implements AIService {
             String action = commandNode.path("action").asText();
             
             if (action.isEmpty()) {
-                System.out.println("❌ 无法识别操作类型");
-                return new AIResponse("😅 抱歉，我无法理解您要执行的具体操作。\n\n💡 请尝试这样说：\n" +
-                    "• '为张三创建订单，商品苹果10个单价5元'\n" +
-                    "• '查询本月销售额'\n" +
-                    "• '删除订单123'\n" +
-                    "• '查询李四的订单'", false);
+                // 如果无法识别为系统指令，尝试当作通用对话处理
+                System.out.println("⚠️ 无法识别操作类型，尝试作为普通对话处理");
+                return handleConversation(input);
             }
             
             // 增强JSON节点信息（添加原始输入和会话ID便于调试）
@@ -224,7 +256,13 @@ public class AIServiceImpl implements AIService {
             }
             
             // 🔧 智能检测是否为确认信息（需要用户确认）
-            boolean isConfirmationMessage = isConfirmationMessage(result);
+            // 分析类操作不需要确认
+            boolean isAnalysisAction = "analyze_order".equals(action) || 
+                                     "analyze_finance".equals(action) || 
+                                     "query_sales".equals(action) ||
+                                     "query_inventory".equals(action);
+            
+            boolean isConfirmationMessage = !isAnalysisAction && isConfirmationMessage(result);
             
             if (isConfirmationMessage && !confirmed) {
                 // 这是确认信息，需要用户确认
@@ -239,6 +277,20 @@ public class AIServiceImpl implements AIService {
         } catch (Exception e) {
             System.err.println("❌ 指令处理失败：" + e.getMessage());
             e.printStackTrace();
+            
+            // 指令处理失败时，尝试降级为普通对话
+            if (e.getMessage() != null && (
+                e.getMessage().contains("无法解析") || 
+                e.getMessage().contains("未知操作") || 
+                e.getMessage().contains("无法识别"))) {
+                System.out.println("🔄 降级为普通对话模式");
+                try {
+                    return handleConversation(input);
+                } catch (Exception chatError) {
+                    // 如果对话处理也失败，返回错误响应
+                    return generateErrorResponse(e, input);
+                }
+            }
             
             // 根据错误类型提供更精准的帮助
             return generateErrorResponse(e, input);
@@ -370,7 +422,30 @@ public class AIServiceImpl implements AIService {
      */
     private AIResponse handleConversation(String input) {
         try {
-            String response = deepSeekAIService.chat(input);
+            System.out.println("💬 处理普通对话：" + input);
+            
+            // 使用新的智能对话模式，能同时处理ERP相关问题和通用知识
+            String response = deepSeekAIService.smartChat(input);
+            
+            // 如果智能对话返回为空，使用增强提示方式
+            if (response == null || response.trim().isEmpty()) {
+                // 增强对话体验 - 添加ERP系统上下文
+                String enhancedPrompt = String.format(
+                    "我是蘑菇头ERP系统的AI助手，除了能够帮用户处理ERP系统中的订单、库存、财务等业务操作外，" +
+                    "也能回答各种通用知识问题。用户的问题是：%s\n\n" +
+                    "如果这是关于ERP系统的问题，我会提供相关帮助；如果是通用知识问题，我会直接回答。", 
+                    input
+                );
+                
+                // 调用通用对话API
+                response = deepSeekAIService.askWithCustomPrompt(input, enhancedPrompt);
+            }
+            
+            // 兜底：如果前两种方式失败，使用普通对话API
+            if (response == null || response.trim().isEmpty()) {
+                response = deepSeekAIService.chat(input);
+            }
+            
             return new AIResponse(response, false);
         } catch (Exception e) {
             e.printStackTrace();
@@ -383,6 +458,8 @@ public class AIServiceImpl implements AIService {
      */
     private AIResponse handleMixedIntent(String input, String extractedCommand, boolean confirmed) {
         try {
+            System.out.println("🔄 处理混合意图：" + input);
+            
             // 先处理指令部分
             AIResponse commandResult = handleCommand(input, extractedCommand, confirmed);
             
@@ -403,7 +480,9 @@ public class AIServiceImpl implements AIService {
             
         } catch (Exception e) {
             e.printStackTrace();
-            return new AIResponse("😅 处理请求时遇到问题：" + e.getMessage(), false);
+            // 如果混合处理失败，尝试退回到纯对话模式
+            System.out.println("🔄 混合意图处理失败，退回至对话模式");
+            return handleConversation(input);
         }
     }
 
@@ -572,6 +651,16 @@ public class AIServiceImpl implements AIService {
         
         String lowerResult = result.toLowerCase();
         
+        // 首先排除明显是分析结果的情况
+        if ((lowerResult.contains("分析报告") || lowerResult.contains("数据分析") || 
+             lowerResult.contains("核心指标") || lowerResult.contains("业务洞察")) &&
+            (lowerResult.contains("订单总数") || lowerResult.contains("销售订单") ||
+             lowerResult.contains("采购订单") || lowerResult.contains("金额") ||
+             lowerResult.contains("优化建议"))) {
+            System.out.println("🔍 检测到分析结果，不需要确认");
+            return false;
+        }
+        
         // 确认信息的典型特征
         String[] confirmationPatterns = {
             "请确认", "确认创建", "确认订单", "confirm", 
@@ -594,6 +683,71 @@ public class AIServiceImpl implements AIService {
         // 检查是否包含价格明细格式（通常出现在确认信息中）
         if (lowerResult.contains("¥") && lowerResult.contains("×") && lowerResult.contains("@")) {
             return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * 检测是否是请求通用AI能力的问题
+     * 用于识别明确与ERP系统无关的问题
+     */
+    private boolean isGeneralAIQuery(String input) {
+        if (input == null || input.trim().isEmpty()) {
+            return false;
+        }
+        
+        String lowerInput = input.toLowerCase();
+        
+        // 通用知识性问题关键词
+        String[] generalKnowledgeKeywords = {
+            "什么是", "如何实现", "怎么做", "介绍一下", "解释", "定义", 
+            "历史", "原理", "方法", "区别", "比较", "教程", "讲解",
+            "写一篇", "生成", "创作", "编写", "设计", "总结", "推荐"
+        };
+        
+        // 问题性表达
+        String[] questionPatterns = {
+            "能不能", "可以吗", "如何", "为什么", "是什么", "在哪里", 
+            "什么时候", "怎样", "有哪些", "告诉我", "知道", "请介绍"
+        };
+        
+        // 检测是否是一般性问题
+        for (String keyword : generalKnowledgeKeywords) {
+            if (lowerInput.contains(keyword)) {
+                // 同时检查是否包含ERP相关词汇
+                if (!containsERPTerms(lowerInput)) {
+                    return true;
+                }
+            }
+        }
+        
+        // 检查问题模式
+        for (String pattern : questionPatterns) {
+            if (lowerInput.contains(pattern)) {
+                // 排除明显的ERP相关问题
+                if (!containsERPTerms(lowerInput)) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 检查文本是否包含ERP相关术语
+     */
+    private boolean containsERPTerms(String text) {
+        String[] erpTerms = {
+            "订单", "客户", "供应商", "商品", "价格", "销售", "采购", 
+            "库存", "入库", "出库", "账单", "财务", "报表", "erp", "系统"
+        };
+        
+        for (String term : erpTerms) {
+            if (text.contains(term)) {
+                return true;
+            }
         }
         
         return false;

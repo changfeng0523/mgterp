@@ -1,5 +1,6 @@
 package com.mogutou.erp.service.external;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -7,6 +8,7 @@ import okhttp3.*;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.net.SocketTimeoutException;
 
 /**
  * 优化的DeepSeek AI服务
@@ -18,12 +20,15 @@ public class DeepSeekAIService {
     private static final String API_KEY = "sk-633c1a70b16c42cbb8b02bba706ac495";
     private static final String API_URL = "https://api.deepseek.com/v1/chat/completions";
     
+    // 媒体类型定义
+    private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
+    
     // 不同场景的超时配置
     private static final int INTENT_TIMEOUT = 15; // 意图识别：快速响应
     private static final int COMMAND_TIMEOUT = 20; // 指令解析：中等响应
     private static final int CONVERSATION_TIMEOUT = 25; // 对话交流：较长响应
-    private static final int ANALYSIS_TIMEOUT = 45; // 业务分析：最长响应
-    private static final int ORDER_ANALYSIS_TIMEOUT = 60; // 订单分析：超长响应
+    private static final int ANALYSIS_TIMEOUT = 60; // 业务分析：更长响应（从45秒增加到60秒）
+    private static final int ORDER_ANALYSIS_TIMEOUT = 90; // 订单分析：超长响应（从60秒增加到90秒）
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -61,18 +66,134 @@ public class DeepSeekAIService {
     }
 
     /**
-     * 快速订单分析模式 - 优化超时处理
+     * 进行订单数据分析
+     * 改进: 增加超时控制和分批处理
      */
-    public String analyzeOrderData(String data) throws IOException {
-        String systemPrompt = buildOrderAnalysisPrompt();
-        return callAIWithRetry(data, systemPrompt, ORDER_ANALYSIS_TIMEOUT, "ORDER_ANALYSIS");
+    public String analyzeOrderData(String orderData) {
+        // 限制分析数据大小，防止请求过大
+        String trimmedData = orderData;
+        if (orderData.length() > 5000) {
+            // 如果数据过长，保留关键部分
+            System.out.println("⚠️ 订单分析数据过长，进行截断: " + orderData.length() + " -> 5000字符");
+            trimmedData = orderData.substring(0, 2000) + 
+                      "\n...(数据省略)...\n" +
+                      orderData.substring(orderData.length() - 2000);
+        }
+        
+        System.out.println("🧠 开始AI订单分析，优化后数据长度: " + trimmedData.length());
+        
+        // 构建提示词 - 针对订单分析进行优化
+        List<Map<String, String>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", 
+            "你是一位企业ERP系统的高级商业分析师，专长于订单数据分析。" +
+            "根据提供的订单数据，提供清晰的业务洞察和切实可行的建议。" +
+            "分析应包含：销售/采购趋势、客户分析、产品表现、利润分析和优化建议。" +
+            "回复应简明扼要，突出关键指标和有针对性的改进点。"
+        ));
+        messages.add(Map.of("role", "user", "content", trimmedData));
+        
+        // 使用订单分析专用的超时设置
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", "deepseek-chat");
+        requestBody.put("messages", messages);
+        requestBody.put("max_tokens", 1200);
+        requestBody.put("temperature", 0.4); // 降低温度以获得更专业的分析
+        
+        // 尝试执行分析，带重试逻辑
+        int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                System.out.println("🧠 AI调用[ORDER_ANALYSIS] - 尝试" + attempt + "/" + maxAttempts);
+                
+                String analysis = executeApiCall(requestBody, ORDER_ANALYSIS_TIMEOUT);
+                
+                // 检查回复质量
+                if (analysis != null && analysis.length() > 100) {
+                    return analysis;
+                }
+                
+                System.out.println("⚠️ AI分析回复质量不佳，准备重试");
+                
+            } catch (Exception e) {
+                System.err.println("❌ AI分析请求失败 (尝试 " + attempt + "/" + maxAttempts + "): " + e.getMessage());
+                if (attempt == maxAttempts) {
+                    return "由于API限制，无法完成深度分析。请参考下方基础分析结果。";
+                }
+                
+                // 等待后重试
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        
+        return "抱歉，无法完成AI分析，请查看基础分析数据。";
     }
 
     /**
      * 自定义提示词模式 - 灵活调用
      */
     public String askWithCustomPrompt(String input, String systemPrompt) throws IOException {
-        return callAIWithRetry(input, systemPrompt, CONVERSATION_TIMEOUT, "CUSTOM");
+        // 确保自定义提示词模式有合理的行为
+        if (systemPrompt == null || systemPrompt.trim().isEmpty()) {
+            return chat(input);  // 如果提示词为空，降级为普通对话
+        }
+        
+        // 对长提示词进行智能裁剪
+        String optimizedPrompt = optimizeSystemPrompt(systemPrompt);
+        
+        return callAIWithRetry(input, optimizedPrompt, CONVERSATION_TIMEOUT, "CUSTOM");
+    }
+    
+    /**
+     * 智能会话模式 - 同时处理ERP业务和通用知识
+     * 最适合处理混合查询场景
+     */
+    public String smartChat(String input) throws IOException {
+        String systemPrompt = buildSmartChatPrompt();
+        return callAIWithRetry(input, systemPrompt, CONVERSATION_TIMEOUT, "SMART_CHAT");
+    }
+
+    /**
+     * 优化系统提示词，避免过长
+     */
+    private String optimizeSystemPrompt(String prompt) {
+        if (prompt == null) {
+            return "";
+        }
+        
+        // 如果提示词过长，进行智能裁剪
+        if (prompt.length() > 1000) {
+            // 取前700字符和后200字符，保留主要指令
+            return prompt.substring(0, 700) + 
+                   "\n...(内容已优化)...\n" + 
+                   prompt.substring(prompt.length() - 200);
+        }
+        
+        return prompt;
+    }
+
+    /**
+     * 构建智能会话提示词 - 兼顾ERP功能和通用AI能力
+     */
+    private String buildSmartChatPrompt() {
+        return "你是蘑菇头ERP系统的AI助手，名为「小蘑菇」。你拥有双重能力：\n\n" +
+               "1. 作为ERP系统助手，你可以帮助用户处理以下业务功能：\n" +
+               "   - 订单管理：创建、查询、修改、删除订单\n" +
+               "   - 库存管理：查询库存、出入库操作\n" +
+               "   - 财务分析：销售统计、利润分析\n" +
+               "   - 客户管理：客户信息查询、历史订单\n\n" +
+               "2. 作为通用AI助手，你可以回答各种知识问题，包括：\n" +
+               "   - 百科知识、技术问题\n" +
+               "   - 数学计算、文学创作\n" +
+               "   - 提供建议、解释概念\n\n" +
+               "你应该根据用户输入的内容，智能判断用户的意图：\n" +
+               "- 如果是ERP系统相关问题，提供系统操作指导\n" +
+               "- 如果是通用知识问题，直接回答\n" +
+               "- 如有必要，可以主动询问用户需求以澄清\n\n" +
+               "回答时保持专业、友好，语言简洁明了。";
     }
 
     /**
@@ -142,10 +263,45 @@ public class DeepSeekAIService {
      */
     private OkHttpClient buildHttpClient(int timeoutSeconds) {
         return new OkHttpClient.Builder()
-                .connectTimeout(Math.min(timeoutSeconds / 2, 10), TimeUnit.SECONDS)
+                .connectTimeout(Math.min(timeoutSeconds / 2, 20), TimeUnit.SECONDS)
                 .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
-                .readTimeout(timeoutSeconds + 5, TimeUnit.SECONDS)
+                .readTimeout(timeoutSeconds + 10, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
+                .addInterceptor(chain -> {
+                    int maxRetries = 2;
+                    int attempts = 0;
+                    Request request = chain.request();
+                    
+                    IOException ioException = null;
+                    while (attempts < maxRetries) {
+                        try {
+                            if (attempts > 0) {
+                                System.out.println(String.format("🔄 HTTP请求重试 %d/%d: %s", 
+                                    attempts + 1, maxRetries, request.url()));
+                            }
+                            return chain.proceed(request);
+                        } catch (SocketTimeoutException e) {
+                            ioException = e;
+                            attempts++;
+                            if (attempts >= maxRetries) break;
+                            
+                            long delay = 1000L * (1L << attempts);
+                            try {
+                                System.out.println(String.format("⏳ 连接超时, %dms后重试: %s", 
+                                    delay, e.getMessage()));
+                                Thread.sleep(delay);
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                                throw new IOException("重试被中断", ie);
+                            }
+                        } catch (IOException e) {
+                            throw e;
+                        }
+                    }
+                    
+                    throw ioException != null ? ioException : 
+                        new IOException("达到最大重试次数");
+                })
                 .build();
     }
 
@@ -640,5 +796,48 @@ public class DeepSeekAIService {
     @Deprecated
     public String ask(String prompt) throws IOException {
         return parseCommand(prompt);
+    }
+
+    /**
+     * 执行API调用 - 通用方法
+     */
+    private String executeApiCall(Map<String, Object> requestBody, int timeoutSeconds) throws IOException {
+        // 序列化请求体
+        String jsonBody = mapper.writeValueAsString(requestBody);
+        
+        // 构建请求
+        RequestBody body = RequestBody.create(jsonBody, JSON);
+        Request request = new Request.Builder()
+                .url(API_URL)
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + API_KEY)
+                .post(body)
+                .build();
+                
+        // 构建HTTP客户端
+        OkHttpClient client = buildHttpClient(timeoutSeconds);
+        
+        // 执行请求
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                String errorBody = response.body() != null ? response.body().string() : "Unknown error";
+                throw new IOException("API调用失败，HTTP错误: " + response.code() + ", " + errorBody);
+            }
+            
+            String responseBody = response.body().string();
+            JsonNode responseJson = mapper.readTree(responseBody);
+            
+            // 提取回复内容
+            if (responseJson.has("choices") && responseJson.get("choices").isArray() && 
+                responseJson.get("choices").size() > 0) {
+                
+                JsonNode firstChoice = responseJson.get("choices").get(0);
+                if (firstChoice.has("message") && firstChoice.get("message").has("content")) {
+                    return firstChoice.get("message").get("content").asText();
+                }
+            }
+            
+            throw new IOException("无法从API响应中提取回复内容");
+        }
     }
 } 

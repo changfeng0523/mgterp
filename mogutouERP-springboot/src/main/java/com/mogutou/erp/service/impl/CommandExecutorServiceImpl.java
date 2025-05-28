@@ -530,16 +530,35 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             }
         }
         
+        // 记录原始输入，用于后续日志诊断
+        String originalInput = context.getOriginalInput();
+        if (originalInput != null && !originalInput.isEmpty()) {
+            System.out.println("🔍 检测缺失信息 - 原始输入: " + originalInput);
+        }
+        
         // 检查商品信息
         boolean hasMissingPrice = false;
         boolean hasIncompleteProduct = false;
         
         if (context.getProductList().isEmpty()) {
-            missingItems.add("商品信息");
-            questions.add("📦 请问需要什么商品？（例如：苹果10个单价5元）");
-            hasIncompleteProduct = true;
-        } else {
-            // 检查商品详细信息
+            if (originalInput != null && containsProductInfo(originalInput)) {
+                // 尝试再次提取商品信息
+                ProductInfo extractedProduct = extractProductFromText(originalInput);
+                if (extractedProduct != null) {
+                    System.out.println("🔄 从原始输入提取商品: " + extractedProduct.name + 
+                                      " x" + extractedProduct.quantity + 
+                                      " @" + extractedProduct.unitPrice);
+                    context.getProductList().add(extractedProduct);
+                }
+            } else {
+                missingItems.add("商品信息");
+                questions.add("📦 请问需要什么商品？（例如：苹果10个单价5元）");
+                hasIncompleteProduct = true;
+            }
+        }
+        
+        // 如果已经有商品列表，检查商品详细信息
+        if (!context.getProductList().isEmpty()) {
             List<String> incompleteProducts = new ArrayList<>();
             
             for (ProductInfo product : context.getProductList()) {
@@ -622,12 +641,19 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
                 if (!context.getProductList().isEmpty()) {
                     String productName = context.getProductList().get(0).name;
                     if (!productName.isEmpty()) {
-                        response.append("\n'").append(productName).append("单价5000元' 或 '每台8000元'");
+                        // 生成更具体的价格示例，针对不同类型商品
+                        if (productName.contains("书") || productName.contains("教材")) {
+                            response.append("\n'").append(productName).append("单价50元' 或 '每本30元'");
+                        } else if (productName.contains("电脑") || productName.contains("手机")) {
+                            response.append("\n'").append(productName).append("单价5000元' 或 '每台8000元'");
+                        } else {
+                            response.append("\n'").append(productName).append("单价20元' 或 '每个15元'");
+                        }
                     } else {
-                        response.append("\n'单价3000元/台' 或 '每台5000元'");
+                        response.append("\n'单价20元' 或 '每个15元'");
                     }
                 } else {
-                    response.append("\n'单价3000元/台' 或 '每台5000元'");
+                    response.append("\n'单价20元' 或 '每个15元'");
                 }
             }
             
@@ -641,6 +667,40 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
         }
         
         return ""; // 没有缺失信息
+    }
+    
+    /**
+     * 检查文本是否包含商品信息
+     */
+    private boolean containsProductInfo(String text) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        
+        // 通用商品单位
+        String[] productUnits = {"个", "件", "本", "瓶", "袋", "台", "部", "套", "张", "只", "箱", "斤"};
+        
+        // 检查是否包含数量单位
+        for (String unit : productUnits) {
+            if (text.contains(unit)) {
+                return true;
+            }
+        }
+        
+        // 检查是否包含常见商品关键词
+        String[] productKeywords = {"书", "电脑", "手机", "水", "饮料", "苹果", "香蕉", "大米"};
+        for (String keyword : productKeywords) {
+            if (text.contains(keyword)) {
+                return true;
+            }
+        }
+        
+        // 检查是否有"买了X"这样的模式
+        if (text.matches(".*买了\\s*\\d+.*") || text.matches(".*买\\s*\\d+.*")) {
+            return true;
+        }
+        
+        return false;
     }
     
     /**
@@ -1459,20 +1519,32 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             try {
                 System.out.println("🤖 开始AI订单分析，数据长度: " + analysisData.length());
                 
+                // 🆕 明确标记这是分析结果，而非确认流程
+                StringBuilder result = new StringBuilder();
+                result.append("📊 订单分析（不需确认）\n\n");
+                
                 // 尝试快速AI分析
                 String aiAnalysis = deepSeekAIService.analyzeOrderData(analysisData.toString());
                 
                 // 清理AI输出中的markdown格式
                 String cleanedAnalysis = cleanMarkdownFormat(aiAnalysis);
                 
-                return "🤖 AI订单分析报告\n\n" + cleanedAnalysis;
+                result.append(cleanedAnalysis);
+                
+                return result.toString();
                 
             } catch (Exception aiError) {
                 // AI调用失败时，返回增强版基础统计分析
                 System.err.println("⚠️ AI分析超时/失败，使用本地分析: " + aiError.getMessage());
                 
-                return generateLocalOrderAnalysis(allOrders, salesOrders, purchaseOrders, 
-                    totalSalesAmount, totalPurchaseAmount, customerStats, analysisData.toString());
+                // 🆕 明确标记这是分析结果，而非确认流程
+                StringBuilder result = new StringBuilder();
+                result.append("📊 快速订单分析（本地处理）\n\n");
+                
+                result.append(generateLocalOrderAnalysis(allOrders, salesOrders, purchaseOrders, 
+                    totalSalesAmount, totalPurchaseAmount, customerStats, analysisData.toString()));
+                
+                return result.toString();
             }
 
         } catch (Exception e) {
@@ -2083,6 +2155,9 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
         
         // 大幅扩展商品名提取：涵盖更多常见商品
         String[] productPatterns = {
+            // 🆕 书籍类（新增）
+            "(教材|课本|书籍|书本|图书|杂志|期刊|字典|词典|书|小说|文学|[\\u4e00-\\u9fa5]{1,8}书)",
+            
             // 🆕 电子产品类（新增）- 优先匹配更具体的名称
             "(服务器|路由器|交换机|投影仪|扫描仪|打印机)",  // 优先级1：最具体的设备
             "(笔记本|台式机|显示器|键盘|鼠标|音响|耳机|手机|平板)",  // 优先级2：具体设备
@@ -2134,6 +2209,26 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             }
         }
         
+        // 🆕 特殊处理：组合式书名，如"嵌入式书"、"Java编程书"等
+        if (productName.isEmpty() && text.contains("书")) {
+            String[] bookPatterns = {
+                "([\\u4e00-\\u9fa5a-zA-Z0-9]{1,10}\\s*书)",  // 任何词+书
+                "([\\u4e00-\\u9fa5a-zA-Z0-9]{1,10}\\s*图书)",
+                "([\\u4e00-\\u9fa5a-zA-Z0-9]{1,10}\\s*教材)",
+                "(关于[\\u4e00-\\u9fa5a-zA-Z0-9]{1,10}的书)"
+            };
+            
+            for (String pattern : bookPatterns) {
+                java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+                java.util.regex.Matcher m = p.matcher(text);
+                if (m.find()) {
+                    productName = m.group(1);
+                    System.out.println("🔍 提取到特殊书籍名: " + productName);
+                    break;
+                }
+            }
+        }
+        
         if (productName.isEmpty()) {
             return null;
         }
@@ -2141,6 +2236,14 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
         // 大幅优化数量提取：支持更多表达方式
         int quantity = 0;
         String[] quantityPatterns = {
+            // 书籍专用模式
+            "(\\d+)\\s*本\\s*" + productName,               // 10本书
+            productName + "\\s*(\\d+)\\s*本",               // 书10本
+            "买了\\s*(\\d+)\\s*本\\s*" + productName,       // 买了10本书
+            "买\\s*(\\d+)\\s*本\\s*" + productName,         // 买10本书
+            "(\\d+)\\s*本",                                 // 10本(后跟其他文字)
+            "([一二三四五六七八九十百]+)\\s*本",              // 十本
+            
             // 基础数量模式
             "(\\d+)\\s*个\\s*" + productName,               // 5个水
             "(\\d+)\\s*瓶\\s*" + productName,               // 5瓶水
@@ -2189,7 +2292,7 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             
             // 通用数量模式
             "数量\\s*(\\d+)",                               // 数量5
-            "(\\d+)\\s*(?:个|瓶|件|只|袋|箱|斤|公斤|台|部|套|张|把)",      // 🆕 扩展单位
+            "(\\d+)\\s*(?:个|瓶|件|只|袋|箱|斤|公斤|台|部|套|张|把|本)",      // 🆕 扩展单位，包括"本"
         };
         
         for (String pattern : quantityPatterns) {
