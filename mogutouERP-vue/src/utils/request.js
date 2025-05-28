@@ -5,7 +5,7 @@ import { getToken } from './auth'
 
 // 创建axios实例
 const service = axios.create({
-  baseURL: import.meta.env.VITE_BASE_API || 'http://localhost:8081', // api的base_url，注意不要重复添加/api
+  baseURL: import.meta.env.VITE_BASE_API || 'http://localhost:8081/api', // 修复：添加/api前缀
   timeout: 5000 // 请求超时时间
 })
 
@@ -29,6 +29,9 @@ service.interceptors.request.use(
       delete config.params.signal
     }
     
+    // 调试：记录请求信息
+    console.log('🚀 API请求:', config.method?.toUpperCase(), config.baseURL + config.url)
+    
     return config
   },
   error => {
@@ -41,20 +44,24 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   response => {
     const res = response.data
+    console.log('📡 API响应:', response.config.url, '状态:', response.status, '数据:', res)
+    
     // 简化错误处理逻辑
     if (res.code && res.code !== 200) {
       // 避免在控制台频繁显示错误消息
       if (import.meta.env.PROD) {
-        ElMessage.error(res.error || '请求失败')
+        ElMessage.error(res.message || res.error || '请求失败')
       } else {
-        console.warn('API请求返回错误:', res.error || '请求失败')
+        console.warn('API请求返回错误:', res.message || res.error || '请求失败')
       }
-      return Promise.reject(new Error(res.error || '请求失败'))
+      return Promise.reject(new Error(res.message || res.error || '请求失败'))
     } else {
       return res
     }
   },
   error => {
+    console.error('❌ API请求失败:', error.config?.url, error.message)
+    
     // 减少不必要的日志输出，只在开发环境显示详细错误
     if (error.response) {
       const status = error.response.status

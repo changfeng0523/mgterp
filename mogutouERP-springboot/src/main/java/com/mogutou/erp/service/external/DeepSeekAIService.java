@@ -318,6 +318,7 @@ public class DeepSeekAIService {
             1. **COMMAND** - 要求执行具体系统操作
                - 关键词：创建、查询、删除、修改、统计、导出等
                - 示例：「创建订单」「查询销售额」「删除库存」
+               - 🆕 价格补充：「单价5元」「每个3元」「一瓶5元」等价格信息也属于COMMAND
             
             2. **CONVERSATION** - 日常对话交流
                - 关键词：问候、感谢、询问、闲聊、求助等  
@@ -325,6 +326,11 @@ public class DeepSeekAIService {
             
             3. **MIXED** - 既有操作需求又有对话元素
                - 示例：「你好，帮我查一下订单」「麻烦创建个订单，谢谢」
+            
+            🔍 **特殊识别规则:**
+            - 含有价格信息的短语（如「单价X元」「每个X元」「一瓶X元」「价格X」）都应识别为COMMAND
+            - 纯数字+单位+货币（如「5元/个」「3块钱」）也应识别为COMMAND
+            - 这些通常是对之前订单创建请求的价格补充信息
             
             📊 **返回格式 (严格JSON):**
             {
@@ -346,97 +352,144 @@ public class DeepSeekAIService {
             你是智能ERP指令解析器。从用户输入中提取信息，转换为标准JSON。
             
             🎯 **解析规则（按优先级）:**
-            1. 识别操作类型：创建→create_order，查询→query_order，删除→delete_order，分析→analyze_order
+            1. 识别操作类型：
+               - 🔥 含有"卖给"、"卖给了"、"卖了"、"出售"、"售给"等动词 → create_order
+               - 含有"买"、"购买"、"采购"、"进货"等动词 → create_order  
+               - 含有"查询"、"查看"、"查找"等动词 → query_order
+               - 含有"删除"、"取消"等动词 → delete_order
+               - 含有"分析"、"统计"等动词 → analyze_order
             2. 识别订单类型：采购关键词→PURCHASE，销售关键词→SALE，默认SALE
             3. 提取客户/供应商：匹配"为[姓名]"、"给[姓名]"、"从[姓名]"、"向[姓名]"等
             4. 提取商品：匹配商品名称+数量+价格的组合模式
-            5. 智能推断缺失信息：缺价格设为0
+            5. 智能推断缺失信息：缺价格设为0，但不要自动填充客户名或商品信息
+            6. 保留原始输入：将用户的原始输入添加到original_input字段
             
             📦 **订单类型识别:**
-            • **PURCHASE(采购)**: 采购、进货、购买、进料、补货、订购、从供应商、向厂家、从XX那里买
-            • **SALE(销售)**: 销售、出售、卖给、售给、发货、交付、为客户、给客户
+            • **PURCHASE(采购)**: 采购、进货、购买、进料、补货、订购、从供应商、向厂家、从XX那里买、买了、购买了
+            • **SALE(销售)**: 销售、出售、卖给、卖给了、卖了、售给、发货、交付、为客户、给客户、出售给
             
             📝 **解析示例（严格按此格式）:**
             
             ===== 🔵 销售订单示例 =====
             输入："创建订单"
-            输出：{"action": "create_order", "order_type": "SALE", "customer": "", "products": []}
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "", "products": [], "original_input": "创建订单"}
             
             输入："为张三创建销售订单，苹果10个单价5元"
-            输出：{"action": "create_order", "order_type": "SALE", "customer": "张三", "products": [{"name": "苹果", "quantity": 10, "unit_price": 5.0}]}
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "张三", "products": [{"name": "苹果", "quantity": 10, "unit_price": 5.0}], "original_input": "为张三创建销售订单，苹果10个单价5元"}
             
             输入："卖给李四20个橙子每个3元"
-            输出：{"action": "create_order", "order_type": "SALE", "customer": "李四", "products": [{"name": "橙子", "quantity": 20, "unit_price": 3.0}]}
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "李四", "products": [{"name": "橙子", "quantity": 20, "unit_price": 3.0}], "original_input": "卖给李四20个橙子每个3元"}
+            
+            输入："卖给了冯天祎三瓶水"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "冯天祎", "products": [{"name": "水", "quantity": 3, "unit_price": 0}], "original_input": "卖给了冯天祎三瓶水"}
             
             输入："发货给王五，香蕉15个单价2元"
-            输出：{"action": "create_order", "order_type": "SALE", "customer": "王五", "products": [{"name": "香蕉", "quantity": 15, "unit_price": 2.0}]}
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "王五", "products": [{"name": "香蕉", "quantity": 15, "unit_price": 2.0}], "original_input": "发货给王五，香蕉15个单价2元"}
+            
+            输入："卖了5个苹果给张三"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "张三", "products": [{"name": "苹果", "quantity": 5, "unit_price": 0}], "original_input": "卖了5个苹果给张三"}
+            
+            输入："出售给客户王五10瓶饮料"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "王五", "products": [{"name": "饮料", "quantity": 10, "unit_price": 0}], "original_input": "出售给客户王五10瓶饮料"}
             
             ===== 🟠 采购订单示例 =====
             输入："创建采购订单"
-            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "", "products": []}
+            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "", "products": [], "original_input": "创建采购订单"}
             
             输入："从供应商张三采购苹果100个单价3元"
-            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "张三", "products": [{"name": "苹果", "quantity": 100, "unit_price": 3.0}]}
+            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "张三", "products": [{"name": "苹果", "quantity": 100, "unit_price": 3.0}], "original_input": "从供应商张三采购苹果100个单价3元"}
             
             输入："向厂家进货橙子200个每个2.5元"
-            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "厂家", "products": [{"name": "橙子", "quantity": 200, "unit_price": 2.5}]}
+            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "厂家", "products": [{"name": "橙子", "quantity": 200, "unit_price": 2.5}], "original_input": "向厂家进货橙子200个每个2.5元"}
             
             输入："从哈振宇那里买了5瓶水，一瓶3元"
-            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "哈振宇", "products": [{"name": "水", "quantity": 5, "unit_price": 3.0}]}
+            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "哈振宇", "products": [{"name": "水", "quantity": 5, "unit_price": 3.0}], "original_input": "从哈振宇那里买了5瓶水，一瓶3元"}
             
             输入："从李老板那里采购大米50袋单价80元"
-            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "李老板", "products": [{"name": "大米", "quantity": 50, "unit_price": 80.0}]}
+            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "李老板", "products": [{"name": "大米", "quantity": 50, "unit_price": 80.0}], "original_input": "从李老板那里采购大米50袋单价80元"}
             
             输入："购买原料，大米50袋单价80元"
-            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "", "products": [{"name": "大米", "quantity": 50, "unit_price": 80.0}]}
+            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "", "products": [{"name": "大米", "quantity": 50, "unit_price": 80.0}], "original_input": "购买原料，大米50袋单价80元"}
             
             输入："补货梨子30个价格4元"
-            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "", "products": [{"name": "梨子", "quantity": 30, "unit_price": 4.0}]}
+            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "", "products": [{"name": "梨子", "quantity": 30, "unit_price": 4.0}], "original_input": "补货梨子30个价格4元"}
             
             ===== 🆕 自然语言表达示例 =====
             输入："从王小明那里买10瓶饮料每瓶5块钱"
-            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "王小明", "products": [{"name": "饮料", "quantity": 10, "unit_price": 5.0}]}
+            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "王小明", "products": [{"name": "饮料", "quantity": 10, "unit_price": 5.0}], "original_input": "从王小明那里买10瓶饮料每瓶5块钱"}
             
             输入："给客户刘大海发货，苹果20个一个3.5元"
-            输出：{"action": "create_order", "order_type": "SALE", "customer": "刘大海", "products": [{"name": "苹果", "quantity": 20, "unit_price": 3.5}]}
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "刘大海", "products": [{"name": "苹果", "quantity": 20, "unit_price": 3.5}], "original_input": "给客户刘大海发货，苹果20个一个3.5元"}
             
             输入："和张师傅订了30斤大米每斤6元"
-            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "张师傅", "products": [{"name": "大米", "quantity": 30, "unit_price": 6.0}]}
+            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "张师傅", "products": [{"name": "大米", "quantity": 30, "unit_price": 6.0}], "original_input": "和张师傅订了30斤大米每斤6元"}
             
             输入："帮李阿姨买香蕉15个单价2块"
-            输出：{"action": "create_order", "order_type": "SALE", "customer": "李阿姨", "products": [{"name": "香蕉", "quantity": 15, "unit_price": 2.0}]}
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "李阿姨", "products": [{"name": "香蕉", "quantity": 15, "unit_price": 2.0}], "original_input": "帮李阿姨买香蕉15个单价2块"}
             
             ===== 🔍 查询示例 =====
             输入："查询王五的订单"
-            输出：{"action": "query_order", "customer": "王五"}
+            输出：{"action": "query_order", "customer": "王五", "original_input": "查询王五的订单"}
             
             输入："查询采购订单"
-            输出：{"action": "query_order", "order_type": "PURCHASE"}
+            输出：{"action": "query_order", "order_type": "PURCHASE", "original_input": "查询采购订单"}
             
             输入："查询销售订单"
-            输出：{"action": "query_order", "order_type": "SALE"}
+            输出：{"action": "query_order", "order_type": "SALE", "original_input": "查询销售订单"}
             
             输入："删除订单123"
-            输出：{"action": "delete_order", "order_id": 123}
+            输出：{"action": "delete_order", "order_id": 123, "original_input": "删除订单123"}
             
             ===== 📊 分析示例 =====
             输入："分析这些订单"
-            输出：{"action": "analyze_order"}
+            输出：{"action": "analyze_order", "original_input": "分析这些订单"}
             
             输入："分析订单数据"
-            输出：{"action": "analyze_order"}
+            输出：{"action": "analyze_order", "original_input": "分析订单数据"}
             
             输入："帮我分析一下订单情况"
-            输出：{"action": "analyze_order"}
+            输出：{"action": "analyze_order", "original_input": "帮我分析一下订单情况"}
             
             输入："订单分析"
-            输出：{"action": "analyze_order"}
+            输出：{"action": "analyze_order", "original_input": "订单分析"}
             
             输入："分析张三的订单"
-            输出：{"action": "analyze_order", "customer": "张三"}
+            输出：{"action": "analyze_order", "customer": "张三", "original_input": "分析张三的订单"}
             
             输入："分析销售订单"
-            输出：{"action": "analyze_order", "order_type": "SALE"}
+            输出：{"action": "analyze_order", "order_type": "SALE", "original_input": "分析销售订单"}
+            
+            ===== 🆕 缺失信息处理示例 =====
+            输入："创建订单，苹果10个单价5元"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "", "products": [{"name": "苹果", "quantity": 10, "unit_price": 5.0}], "original_input": "创建订单，苹果10个单价5元"}
+            
+            输入："为张三创建订单"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "张三", "products": [], "original_input": "为张三创建订单"}
+            
+            输入："客户是李四"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "李四", "products": [], "original_input": "客户是李四"}
+            
+            输入："苹果10个单价5元"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "", "products": [{"name": "苹果", "quantity": 10, "unit_price": 5.0}], "original_input": "苹果10个单价5元"}
+            
+            输入："补充客户信息：王五"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "王五", "products": [], "original_input": "补充客户信息：王五"}
+            
+            ===== 💰 纯价格补充示例 =====
+            输入："单价5元"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "", "products": [{"name": "", "quantity": 0, "unit_price": 5.0}], "original_input": "单价5元"}
+            
+            输入："每瓶5元"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "", "products": [{"name": "", "quantity": 0, "unit_price": 5.0}], "original_input": "每瓶5元"}
+            
+            输入："一个3元"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "", "products": [{"name": "", "quantity": 0, "unit_price": 3.0}], "original_input": "一个3元"}
+            
+            输入："价格4块钱"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "", "products": [{"name": "", "quantity": 0, "unit_price": 4.0}], "original_input": "价格4块钱"}
+            
+            输入："3元/个"
+            输出：{"action": "create_order", "order_type": "SALE", "customer": "", "products": [{"name": "", "quantity": 0, "unit_price": 3.0}], "original_input": "3元/个"}
             
             🔧 **提取技巧:**
             - 订单类型：优先检查采购关键词（从XX买、采购、进货），再检查销售关键词，默认销售
@@ -453,6 +506,7 @@ public class DeepSeekAIService {
             4. 数字类型用数值，文本用字符串
             5. 订单类型必须是"SALE"或"PURCHASE"
             6. 客户名可以是任何中文或英文姓名
+            7. 必须包含original_input字段记录原始输入
             """;
     }
 

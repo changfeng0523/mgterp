@@ -5,90 +5,110 @@
         <h2 class="title">蘑菇头ERP系统</h2>
         <p class="subtitle">进销存管理系统</p>
       </div>
-      <el-form ref="formRef" :model="form" :rules="rules" class="login-form" @submit.prevent="handleLogin">
+
+      <!-- 登录表单 -->
+      <el-form
+        v-if="!isRegister"
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        class="login-form"
+        @submit.prevent="handleLogin"
+      >
         <el-form-item prop="username">
-          <el-input 
-            v-model="form.username" 
-            placeholder="用户名" 
+          <el-input
+            v-model="form.username"
+            placeholder="用户名"
             prefix-icon="el-icon-user"
             autocomplete="off"
           />
         </el-form-item>
         <el-form-item prop="password">
-          <el-input 
-            v-model="form.password" 
-            type="password" 
-            placeholder="密码" 
+          <el-input
+            v-model="form.password"
+            type="password"
+            placeholder="密码"
             prefix-icon="el-icon-lock"
             show-password
             autocomplete="off"
           />
         </el-form-item>
         <el-form-item>
-          <el-button 
-            type="primary" 
-            :loading="loading" 
-            class="login-button" 
+          <el-button
+            type="primary"
+            :loading="loading"
+            class="login-button"
             @click="handleLogin"
           >
             {{ loading ? '登录中...' : '登录' }}
           </el-button>
         </el-form-item>
         <div class="form-footer">
-          <el-button type="text" @click="toggleForm">{{ isRegister ? '返回登录' : '没有账号？立即注册' }}</el-button>
+          <el-button type="link" @click="toggleForm">
+            没有账号？立即注册
+          </el-button>
         </div>
       </el-form>
-      
+
       <!-- 注册表单 -->
-      <el-form v-if="isRegister" ref="registerFormRef" :model="registerForm" :rules="registerRules" class="login-form" @submit.prevent="handleRegister">
+      <el-form
+        v-else
+        ref="registerFormRef"
+        :model="registerForm"
+        :rules="registerRules"
+        class="login-form"
+        @submit.prevent="handleRegister"
+      >
         <el-form-item prop="username">
-          <el-input 
-            v-model="registerForm.username" 
-            placeholder="用户名" 
+          <el-input
+            v-model="registerForm.username"
+            placeholder="用户名"
             prefix-icon="el-icon-user"
             autocomplete="off"
           />
         </el-form-item>
         <el-form-item prop="tel">
-          <el-input 
-            v-model="registerForm.tel" 
-            placeholder="电话号码" 
+          <el-input
+            v-model="registerForm.tel"
+            placeholder="电话号码"
             prefix-icon="el-icon-phone"
             autocomplete="off"
           />
         </el-form-item>
         <el-form-item prop="password">
-          <el-input 
-            v-model="registerForm.password" 
-            type="password" 
-            placeholder="密码" 
+          <el-input
+            v-model="registerForm.password"
+            type="password"
+            placeholder="密码"
             prefix-icon="el-icon-lock"
             show-password
             autocomplete="off"
           />
         </el-form-item>
         <el-form-item prop="confirmPassword">
-          <el-input 
-            v-model="registerForm.confirmPassword" 
-            type="password" 
-            placeholder="确认密码" 
+          <el-input
+            v-model="registerForm.confirmPassword"
+            type="password"
+            placeholder="确认密码"
             prefix-icon="el-icon-lock"
             show-password
             autocomplete="off"
           />
         </el-form-item>
         <el-form-item>
-          <el-button 
-            type="primary" 
-            :loading="loading" 
-            class="login-button" 
+          <el-button
+            type="primary"
+            :loading="loading"
+            class="login-button"
             @click="handleRegister"
           >
             {{ loading ? '注册中...' : '注册' }}
           </el-button>
         </el-form-item>
         <div class="form-footer">
-          <el-button type="text" @click="toggleForm">返回登录</el-button>
+          <el-button type="link" @click="toggleForm">
+            返回登录
+          </el-button>
         </div>
       </el-form>
     </div>
@@ -101,19 +121,15 @@ import { useRouter } from 'vue-router'
 import { setToken } from '@/utils/auth'
 import { ElMessage } from 'element-plus'
 
+// 登录状态
 const loading = ref(false)
-const form = ref({
-  username: '',
-  password: ''
-})
+const form = ref({ username: '', password: '' })
+const formRef = ref(null)
 
+// 注册状态
 const isRegister = ref(false)
-const registerForm = ref({
-  username: '',
-  password: '',
-  confirmPassword: '',
-  tel: ''
-})
+const registerForm = ref({ username: '', tel: '', password: '', confirmPassword: '' })
+const registerFormRef = ref(null)
 
 const rules = {
   username: [
@@ -141,19 +157,25 @@ const registerRules = {
   ],
   confirmPassword: [
     { required: true, message: '请确认密码', trigger: 'blur' },
-    { min: 6, max: 20, message: '长度在 6 到 20 个字符', trigger: 'blur' },
-    { validator: (rule, value, callback) => {
-      if (value !== registerForm.value.password) {
-        callback(new Error('两次输入密码不一致'))
-      } else {
-        callback()
-      }
-    }, trigger: 'blur' }
+    { 
+      validator: (rule, value, callback) => {
+        if (value !== registerForm.value.password) {
+          callback(new Error('两次输入密码不一致'))
+        } else {
+          callback()
+        }
+      }, 
+      trigger: 'blur' 
+    }
   ]
 }
 
 const router = useRouter()
-const formRef = ref(null)
+
+// 切换登录/注册
+const toggleForm = () => {
+  isRegister.value = !isRegister.value
+}
 
 const handleLogin = async () => {
   if (!formRef.value) return
@@ -162,52 +184,25 @@ const handleLogin = async () => {
     await formRef.value.validate()
     loading.value = true
     
-    // 添加错误处理和调试信息
-    console.log('登录请求数据:', form.value)
-    
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          username: form.value.username,
-          password: form.value.password
-        })
-      })
-      
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('登录响应错误:', response.status, errorText)
-        throw new Error(`登录失败: ${response.status} ${errorText}`)
-      }
-      
-      const data = await response.json()
-      console.log('登录响应数据:', data)
-      
-      // 设置token并跳转
-      if (data && data.data && data.data.token) {
-        setToken(data.data.token)
-        ElMessage.success('登录成功')
-        router.push('/')
-      } else {
-        console.error('登录响应中缺少token')
-        ElMessage.error('登录失败: 服务器响应缺少token')
-      }
-    } catch (error) {
-      console.error('登录请求失败', error)
-      ElMessage.error(`登录失败: ${error.message}`)
-    } finally {
-      loading.value = false
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form.value)
+    })
+    const data = await response.json()
+    if (data.code === 200 && data.data.token) {
+      setToken(data.data.token)
+      ElMessage.success('登录成功')
+      router.push('/')
+    } else {
+      ElMessage.error(data.error || '登录失败')
     }
-  } catch (error) {
+  } catch (err) {
+    ElMessage.error(err.message || '登录失败')
+  } finally {
     loading.value = false
-    console.error('表单验证失败', error)
   }
 }
-
-const registerFormRef = ref(null)
 
 const handleRegister = async () => {
   if (!registerFormRef.value) return
@@ -216,49 +211,29 @@ const handleRegister = async () => {
     await registerFormRef.value.validate()
     loading.value = true
     
-    // 发送注册请求到后端
-    try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          username: registerForm.value.username,
-          password: registerForm.value.password,
-          tel: registerForm.value.tel
-        })
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: registerForm.value.username,
+        password: registerForm.value.password,
+        tel: registerForm.value.tel
       })
-      
-      const data = await response.json()
-      
-      if (data.code === 200) {
-        ElMessage.success('注册成功，请登录')
-        isRegister.value = false
-        // 清空注册表单
-        registerForm.value = {
-          username: '',
-          password: '',
-          confirmPassword: '',
-          tel: ''
-        }
-      } else {
-        ElMessage.error(data.error || '注册失败，请稍后重试')
-      }
-    } catch (error) {
-      console.error('注册请求失败', error)
-      ElMessage.error('注册失败，请检查网络连接')
-    } finally {
-      loading.value = false
+    })
+    const data = await response.json()
+    if (data.code === 200) {
+      ElMessage.success('注册成功，请登录')
+      toggleForm()
+      // 清空注册表单
+      registerForm.value = { username: '', tel: '', password: '', confirmPassword: '' }
+    } else {
+      ElMessage.error(data.error || '注册失败')
     }
-  } catch (error) {
+  } catch (err) {
+    ElMessage.error(err.message || '注册失败')
+  } finally {
     loading.value = false
-    console.error('表单验证失败', error)
   }
-}
-
-const toggleForm = () => {
-  isRegister.value = !isRegister.value
 }
 </script>
 

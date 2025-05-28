@@ -3,7 +3,7 @@ import md5 from 'js-md5'
 
 export function login(username, password) {
   return request({
-    url: '/auth/login',
+    url: '/api/auth/login',
     method: 'post',
     data: {
       username: username,
@@ -14,14 +14,14 @@ export function login(username, password) {
 
 export function getInfo() {
   return request({
-    url: '/auth/user',
+    url: '/api/auth/user',
     method: 'get'
   })
 }
 
 export function logout() {
   return request({
-    url: '/auth/logout',
+    url: '/api/auth/logout',
     method: 'get'
   })
 }
@@ -29,7 +29,7 @@ export function logout() {
 // 获取用户列表
 export function getUserList(params) {
   return request({
-    url: '/users',
+    url: '/api/users',
     method: 'get',
     params
   })
@@ -38,7 +38,7 @@ export function getUserList(params) {
 // 创建用户
 export function createUser(data) {
   return request({
-    url: '/users',
+    url: '/api/users',
     method: 'post',
     data
   })
@@ -47,7 +47,7 @@ export function createUser(data) {
 // 更新用户
 export function updateUser(id, data) {
   return request({
-    url: `/users/${id}`,
+    url: `/api/users/${id}`,
     method: 'put',
     data
   })
@@ -56,7 +56,7 @@ export function updateUser(id, data) {
 // 删除用户
 export function deleteUser(id) {
   return request({
-    url: `/users/${id}`,
+    url: `/api/users/${id}`,
     method: 'delete'
   })
 }

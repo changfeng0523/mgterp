@@ -55,21 +55,49 @@ public class AuthController {
     
     @GetMapping("/user")
     public Result<Map<String, Object>> getUserInfo(HttpServletRequest request) {
-        String username = (String) request.getAttribute("username");
-        if (username != null) {
+        try {
+            // 记录调试信息
+            System.out.println("🔍 获取用户信息请求开始");
+            
+            // 从请求属性中获取用户名（由JWT拦截器设置）
+            String username = (String) request.getAttribute("username");
+            Long userId = (Long) request.getAttribute("userId");
+            
+            System.out.println("🎯 从请求属性获取到的用户名: " + username);
+            System.out.println("🎯 从请求属性获取到的用户ID: " + userId);
+            
+            if (username == null || username.trim().isEmpty()) {
+                System.err.println("❌ 用户名为空，JWT拦截器可能未正确设置用户信息");
+                return Result.error(401, "未授权访问：缺少用户信息");
+            }
+            
+            // 根据用户名查找用户
             Optional<User> userOpt = userService.findByUsername(username);
+            System.out.println("🔍 数据库查询用户结果: " + (userOpt.isPresent() ? "找到用户" : "用户不存在"));
+            
             if (userOpt.isPresent()) {
                 User user = userOpt.get();
+                
+                // 构建用户信息响应
                 Map<String, Object> userInfo = new HashMap<>();
                 userInfo.put("name", user.getUsername());
-                userInfo.put("roles", new String[]{user.getRole()});
+                userInfo.put("roles", new String[]{user.getRole() != null ? user.getRole() : "USER"});
                 userInfo.put("avatar", "https://wpimg.wallstcn.com/f778738c-e4f8-4870-b634-56703b4acafe.gif");
-                userInfo.put("tel", user.getTel());
-                userInfo.put("email", user.getEmail());
+                userInfo.put("tel", user.getTel() != null ? user.getTel() : "");
+                userInfo.put("email", user.getEmail() != null ? user.getEmail() : "");
+                
+                System.out.println("✅ 成功构建用户信息: " + userInfo);
                 return Result.success(userInfo);
+            } else {
+                System.err.println("❌ 在数据库中未找到用户: " + username);
+                return Result.error(404, "用户不存在");
             }
+            
+        } catch (Exception e) {
+            System.err.println("❌ 获取用户信息时发生异常: " + e.getMessage());
+            e.printStackTrace();
+            return Result.error(500, "服务器内部错误：" + e.getMessage());
         }
-        return Result.error(401, "未授权");
     }
     
     @GetMapping("/logout")
@@ -81,36 +109,43 @@ public class AuthController {
     
     @PostMapping("/register")
     public Result<Void> register(@RequestBody Map<String, String> registerRequest) {
-        String username = registerRequest.get("username");
-        String password = registerRequest.get("password");
-        String tel = registerRequest.get("tel");
-        String email = registerRequest.get("email");
-        
-        // 验证必要字段不为空
-        if (username == null || password == null || tel == null) {
-            return Result.error(400, "用户名、密码和电话号码不能为空");
+        try {
+            String username = registerRequest.get("username");
+            String password = registerRequest.get("password");
+            String tel = registerRequest.get("tel");
+            String email = registerRequest.get("email");
+            
+            // 验证必要字段不为空
+            if (username == null || password == null || tel == null) {
+                return Result.error(400, "用户名、密码和电话号码不能为空");
+            }
+            
+            // 检查用户名是否已存在
+            if (userService.isUsernameExists(username)) {
+                return Result.error(400, "用户名已存在");
+            }
+            
+            // 检查电话号码是否已存在
+            if (userService.isTelExists(tel)) {
+                return Result.error(400, "电话号码已被注册");
+            }
+            
+            // 创建新用户
+            User user = new User();
+            user.setUsername(username);
+            user.setPassword(password); // UserService会处理密码加密
+            user.setTel(tel);
+            user.setEmail(email);
+            
+            // 保存用户
+            userService.createUser(user);
+            
+            return Result.success("注册成功");
+            
+        } catch (Exception e) {
+            System.err.println("❌ 用户注册时发生异常: " + e.getMessage());
+            e.printStackTrace();
+            return Result.error(500, "注册失败：" + e.getMessage());
         }
-        
-        // 检查用户名是否已存在
-        if (userService.isUsernameExists(username)) {
-            return Result.error(400, "用户名已存在");
-        }
-        
-        // 检查电话号码是否已存在
-        if (userService.isTelExists(tel)) {
-            return Result.error(400, "电话号码已被注册");
-        }
-        
-        // 创建新用户
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword(password); // UserService会处理密码加密
-        user.setTel(tel);
-        user.setEmail(email);
-        
-        // 保存用户
-        userService.createUser(user);
-        
-        return Result.success("注册成功");
     }
 }

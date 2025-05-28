@@ -17,9 +17,17 @@ import org.springframework.data.domain.Page;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 
 /**
  * 命令执行服务实现类
@@ -35,15 +43,48 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
     private DeepSeekAIService deepSeekAIService;
 
     private final ObjectMapper mapper = new ObjectMapper();
+    
+    // 对话上下文缓存，用于保存订单创建过程中的信息
+    private final Map<String, OrderContext> orderContextCache = new ConcurrentHashMap<>();
+    
+    // 对话上下文超时时间（毫秒）
+    private static final long CONTEXT_TIMEOUT = 10 * 60 * 1000; // 10分钟
+    
+    // 智能学习缓存 - 记住用户的习惯表达
+    private final Map<String, String> customerAliasCache = new ConcurrentHashMap<>(); // 客户别名映射
+    private final Map<String, String> productAliasCache = new ConcurrentHashMap<>(); // 商品别名映射
+    private final Map<String, Float> productPriceCache = new ConcurrentHashMap<>(); // 商品常用价格
+    private final Map<String, CustomerPreference> customerPreferenceCache = new ConcurrentHashMap<>(); // 客户偏好
 
     @Override
     public String execute(JsonNode root) {
         String action = root.path("action").asText();
         
         System.out.println("🎮 执行指令: " + action + " - " + root.toString());
+        
+        // 添加会话ID支持
+        String sessionId = root.has("session_id") ? root.get("session_id").asText() : "";
+        
+        // 🧠 智能识别不同类型的用户输入
+        String originalInput = root.has("original_input") ? root.get("original_input").asText() : "";
+        
+        // 1. 处理确认指令
+        if (isConfirmationInput(originalInput) && hasIncompleteOrderContext(sessionId)) {
+            return handleOrderConfirmation(sessionId);
+        }
+        
+        // 2. 处理修改指令
+        if (isModificationInput(originalInput) && hasIncompleteOrderContext(sessionId)) {
+            return handleOrderModification(root, sessionId);
+        }
+        
+        // 3. 处理纯价格输入的特殊情况
+        if (isPriceOnlyInput(originalInput) && hasIncompleteOrderContext(sessionId)) {
+            return handlePriceCompletion(root, sessionId);
+        }
 
         return switch (action) {
-            case "create_order" -> handleCreateOrder(root);
+            case "create_order" -> handleCreateOrder(root, sessionId);
             case "delete_order" -> handleDeleteOrder(root);
             case "query_order" -> handleQueryOrder(root);
             case "confirm_order" -> handleConfirmOrder(root);
@@ -54,36 +95,249 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             default -> "❓ 未知操作类型：" + action + "\n\n💡 支持的操作：\n• create_order (创建订单)\n• query_order (查询订单)\n• delete_order (删除订单)\n• confirm_order (确认订单)\n• query_sales (销售查询)\n• query_inventory (库存查询)\n• analyze_finance (财务分析)\n• analyze_order (订单分析)";
         };
     }
+    
+    /**
+     * 🧠 智能识别确认输入
+     */
+    private boolean isConfirmationInput(String input) {
+        if (input == null || input.trim().isEmpty()) {
+            return false;
+        }
+        
+        String[] confirmPatterns = {
+            "确认", "对的", "是的", "好的", "没问题", "可以", "同意", "正确",
+            "ok", "yes", "y", "好", "对", "是", "👍", "✅", "确定"
+        };
+        
+        String lowerInput = input.toLowerCase().trim();
+        for (String pattern : confirmPatterns) {
+            if (lowerInput.equals(pattern) || lowerInput.contains(pattern)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 🧠 智能识别修改输入
+     */
+    private boolean isModificationInput(String input) {
+        if (input == null || input.trim().isEmpty()) {
+            return false;
+        }
+        
+        String[] modifyPatterns = {
+            "改为", "修改", "改成", "变成", "换成", "不对", "错了", "应该是",
+            "客户改", "价格改", "数量改", "商品改", "改一下", "更正"
+        };
+        
+        String lowerInput = input.toLowerCase();
+        for (String pattern : modifyPatterns) {
+            if (lowerInput.contains(pattern)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 🧠 处理订单确认
+     */
+    private String handleOrderConfirmation(String sessionId) {
+        OrderContext context = getOrderContext(sessionId);
+        if (context == null) {
+            return "❌ 找不到待确认的订单信息，请重新开始创建订单";
+        }
+        
+        // 最终验证信息完整性
+        String validation = validateOrderContext(context);
+        if (!validation.isEmpty()) {
+            return "❌ 订单信息不完整：\n" + validation;
+        }
+        
+        // 执行订单创建
+        return completeOrderCreation(context, sessionId);
+    }
+    
+    /**
+     * 🧠 处理订单修改
+     */
+    private String handleOrderModification(JsonNode root, String sessionId) {
+        OrderContext context = getOrderContext(sessionId);
+        if (context == null) {
+            return "❌ 找不到待修改的订单信息，请重新开始创建订单";
+        }
+        
+        String originalInput = root.has("original_input") ? root.get("original_input").asText() : "";
+        
+        // 智能解析修改内容
+        if (originalInput.contains("客户") && (originalInput.contains("改为") || originalInput.contains("改成"))) {
+            String newCustomer = extractModificationValue(originalInput, "客户");
+            if (!newCustomer.isEmpty()) {
+                context.customerName = intelligentErrorCorrection(newCustomer, "customer");
+                context.addClarification("客户修改为：" + context.customerName);
+            }
+        }
+        
+        if ((originalInput.contains("价格") || originalInput.contains("单价")) && 
+            (originalInput.contains("改为") || originalInput.contains("改成"))) {
+            float newPrice = extractPriceFromModification(originalInput);
+            if (newPrice > 0 && !context.getProductList().isEmpty()) {
+                context.getProductList().get(0).unitPrice = newPrice; // 简化：修改第一个商品的价格
+                context.addClarification("价格修改为：¥" + newPrice);
+            }
+        }
+        
+        // 重新生成确认信息
+        return generateSmartConfirmation(context);
+    }
+    
+    /**
+     * 🧠 提取修改值
+     */
+    private String extractModificationValue(String input, String field) {
+        String pattern = field + "\\s*(?:改为|改成|是|为)\\s*([\\u4e00-\\u9fa5a-zA-Z0-9]+)";
+        Pattern p = Pattern.compile(pattern);
+        Matcher m = p.matcher(input);
+        if (m.find()) {
+            return m.group(1).trim();
+        }
+        return "";
+    }
+    
+    /**
+     * 🧠 从修改指令中提取价格
+     */
+    private float extractPriceFromModification(String input) {
+        String[] patterns = {
+            "(?:价格|单价)\\s*(?:改为|改成|是)\\s*(\\d+(?:\\.\\d+)?)\\s*元?",
+            "(\\d+(?:\\.\\d+)?)\\s*元"
+        };
+        
+        for (String pattern : patterns) {
+            Pattern p = Pattern.compile(pattern);
+            Matcher m = p.matcher(input);
+            if (m.find()) {
+                try {
+                    return Float.parseFloat(m.group(1));
+                } catch (NumberFormatException e) {
+                    // 继续尝试下一个模式
+                }
+            }
+        }
+        return 0;
+    }
+    
+    /**
+     * 🧠 验证订单上下文完整性
+     */
+    private String validateOrderContext(OrderContext context) {
+        List<String> errors = new ArrayList<>();
+        
+        if (context.getCustomerName().isEmpty()) {
+            errors.add("缺少客户信息");
+        }
+        
+        if (context.getProductList().isEmpty()) {
+            errors.add("缺少商品信息");
+        } else {
+            for (ProductInfo product : context.getProductList()) {
+                if (product.name.isEmpty()) {
+                    errors.add("商品名称不能为空");
+                }
+                if (product.quantity <= 0) {
+                    errors.add("商品数量必须大于0");
+                }
+                if (product.unitPrice <= 0) {
+                    errors.add("商品单价必须大于0");
+                }
+            }
+        }
+        
+        return String.join("、", errors);
+    }
 
     /**
-     * 智能创建订单 - 强化字段提取和容错处理
+     * 处理价格补充完成
      */
-    private String handleCreateOrder(JsonNode root) {
+    private String handlePriceCompletion(JsonNode root, String sessionId) {
+        // 提取价格和可能的商品信息
+        String input = root.has("original_input") ? root.get("original_input").asText() : "";
+        
+        // 尝试先从输入中提取完整的商品信息（包括价格）
+        ProductInfo completeProductInfo = extractProductFromText(input);
+        
+        // 如果提取到了完整商品信息，优先使用
+        if (completeProductInfo != null && completeProductInfo.unitPrice > 0) {
+            // 获取上下文
+            OrderContext context = getOrderContext(sessionId);
+            if (context == null) {
+                return "❌ 无法找到未完成的订单创建请求，请重新开始创建订单";
+            }
+            
+            // 更新或添加商品信息
+            List<ProductInfo> products = context.getProductList();
+            if (!products.isEmpty()) {
+                // 更新现有商品的价格，如果商品名匹配的话
+                boolean updated = false;
+                for (ProductInfo product : products) {
+                    if (product.name.equals(completeProductInfo.name) || 
+                        (product.name.isEmpty() && completeProductInfo.name.equals("水"))) {
+                        product.name = completeProductInfo.name;
+                        product.quantity = completeProductInfo.quantity > 0 ? completeProductInfo.quantity : product.quantity;
+                        product.unitPrice = completeProductInfo.unitPrice;
+                        updated = true;
+                        break;
+                    }
+                }
+                if (!updated) {
+                    // 如果没有匹配的商品，添加新商品
+                    products.add(completeProductInfo);
+                }
+            } else {
+                // 如果没有商品列表，直接添加
+                products.add(completeProductInfo);
+            }
+            
+            // 完成订单创建
+            return completeOrderCreation(context, sessionId);
+        }
+        
+        // 否则按照原来的逻辑处理纯价格信息
+        float price = extractPriceOnly(input);
+        
+        if (price <= 0) {
+            return "❌ 无法识别有效的价格信息，请重新输入（例如：'单价5元'）";
+        }
+        
+        // 获取上下文
+        OrderContext context = getOrderContext(sessionId);
+        if (context == null) {
+            return "❌ 无法找到未完成的订单创建请求，请重新开始创建订单";
+        }
+        
+        // 更新商品价格
+        for (ProductInfo product : context.getProductList()) {
+            if (product.unitPrice <= 0) {
+                product.unitPrice = price;
+            }
+        }
+        
+        // 完成订单创建
+        return completeOrderCreation(context, sessionId);
+    }
+    
+    /**
+     * 完成订单创建
+     */
+    private String completeOrderCreation(OrderContext context, String sessionId) {
         try {
-            System.out.println("🔍 解析订单创建请求: " + root.toString());
-            
-            // 智能提取订单类型
-            String orderType = smartExtractOrderType(root);
-            
-            // 智能提取客户信息 - 更加宽松的处理
-            String customerName = smartExtractCustomer(root);
-            if (customerName.isEmpty()) {
-                // 如果没有客户信息，使用默认客户或要求用户补充
-                System.out.println("⚠️ 未提取到客户信息，使用默认处理");
-                return "❌ 缺少客户信息\n\n💡 请这样表达：\n• '为张三创建订单，苹果10个单价5元'\n• '给李四下单，橙子20个每个3元'\n• '帮王五买香蕉15个单价2元'";
-            }
-            
-            // 智能提取商品列表
-            List<ProductInfo> productList = smartExtractProducts(root);
-            if (productList.isEmpty()) {
-                System.out.println("❌ 未能提取到商品信息");
-                return "❌ 缺少商品信息\n\n💡 请这样表达：\n• '苹果10个单价5元'\n• '橙子，数量20，单价3元'\n• '买香蕉15个每个2块钱'\n\n📝 完整示例：'为张三创建订单，苹果10个单价5元'";
-            }
-
             // 创建订单对象
             Order order = new Order();
-            order.setOrderType(orderType);
-            order.setCustomerName(customerName);
+            order.setOrderType(context.getOrderType());
+            order.setCustomerName(context.getCustomerName());
             order.setCreatedAt(LocalDateTime.now());
 
             List<OrderGoods> goodsList = new ArrayList<>();
@@ -91,15 +345,17 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             int totalItems = 0;
 
             // 处理商品列表
-            for (ProductInfo product : productList) {
+            for (ProductInfo product : context.getProductList()) {
                 // 验证产品信息
                 if (product.quantity <= 0) {
                     return String.format("❌ 商品'%s'的数量无效\n💡 请提供正确的数量信息", product.name);
                 }
                 
-                // 允许单价为0，后续可以补充
-                if (product.unitPrice < 0) {
-                    product.unitPrice = 0; // 设为0，表示待补充价格
+                // 验证价格信息
+                if (product.unitPrice <= 0) {
+                    String priceType = order.getOrderType().equals("PURCHASE") ? "采购" : "销售";
+                    return String.format("❌ 商品'%s'的%s单价无效\n💡 请提供正确的价格信息，例如：'%s单价5元'", 
+                        product.name, priceType, product.name);
                 }
 
                 // 创建商品和订单商品关联
@@ -128,20 +384,26 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             StringBuilder result = new StringBuilder();
             result.append(String.format("✅ %s%s订单创建成功！\n\n", typeIcon, orderTypeDesc));
             result.append(String.format("📋 订单号：%s | %s：%s | 金额：¥%.2f\n", 
-                savedOrder.getOrderNo(), partnerLabel, customerName, totalAmount));
+                savedOrder.getOrderNo(), partnerLabel, context.getCustomerName(), totalAmount));
             
             // 简化的商品明细
             result.append(String.format("📦 商品：%d种/%d件", goodsList.size(), totalItems));
             if (goodsList.size() <= 2) {
                 result.append(" (");
                 for (int i = 0; i < goodsList.size(); i++) {
-                    ProductInfo product = productList.get(i);
+                    ProductInfo product = context.getProductList().get(i);
                     result.append(product.name).append("×").append(product.quantity);
                     if (i < goodsList.size() - 1) result.append(", ");
                 }
                 result.append(")");
             }
             result.append("\n\n💡 可以说'查询订单").append(savedOrder.getOrderNo()).append("'查看详情");
+            
+            // 🧠 学习客户偏好（在订单成功创建后）
+            learnCustomerPreference(context.getCustomerName(), context.getProductList(), order.getOrderType());
+            
+            // 清除上下文
+            removeOrderContext(sessionId);
             
             return result.toString();
 
@@ -153,487 +415,685 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
     }
 
     /**
-     * 智能提取订单类型 - 增强版
+     * 🧠 超级智能创建订单 - 融合AI推理、学习记忆、容错纠正
      */
-    private String smartExtractOrderType(JsonNode root) {
-        // 1. 尝试从JSON字段中提取
-        String[] typeFields = {"order_type", "type", "orderType", "order_type"};
-        for (String field : typeFields) {
-            if (root.has(field)) {
-                String type = root.get(field).asText().toUpperCase();
-                if (type.equals("SALE") || type.equals("PURCHASE")) {
-                    System.out.println("📦 从字段提取订单类型: " + type);
-                    return type;
+    private String handleCreateOrder(JsonNode root, String sessionId) {
+        try {
+            System.out.println("🧠 启动超智能订单分析: " + root.toString());
+            
+            // 🔍 第一步：基础信息提取
+            String originalInput = root.has("original_input") ? root.get("original_input").asText() : "";
+            String orderType = smartExtractOrderType(root);
+            String customerName = smartExtractCustomer(root);
+            List<ProductInfo> productList = smartExtractProducts(root);
+            
+            // 🔧 第二步：智能纠错和优化
+            customerName = intelligentErrorCorrection(customerName, "customer");
+            for (ProductInfo product : productList) {
+                product.name = intelligentErrorCorrection(product.name, "product");
+            }
+            
+            // 📋 第三步：创建订单上下文
+            OrderContext context = new OrderContext(orderType, customerName, productList);
+            context.setOriginalInput(originalInput);
+            
+            // 🧠 第四步：AI智能推理补全信息
+            context = smartEngine.smartInferMissingInfo(context, originalInput);
+            
+            // 💾 第五步：保存上下文
+            saveOrderContext(sessionId, context);
+            
+            // 🤔 第六步：检查是否还有缺失信息
+            String missingInfoQuestion = detectMissingInfoAndAsk(context);
+            if (!missingInfoQuestion.isEmpty()) {
+                // 添加智能建议
+                String suggestions = generateSmartSuggestions(context);
+                if (!suggestions.isEmpty()) {
+                    return missingInfoQuestion + "\n" + suggestions;
+                }
+                return missingInfoQuestion;
+            }
+            
+            // ✨ 第七步：信息完整，提供智能确认
+            String smartConfirmation = generateSmartConfirmation(context);
+            context.addClarification("等待用户确认");
+            saveOrderContext(sessionId, context); // 更新上下文状态
+            
+            return smartConfirmation;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "❌ 创建订单失败：" + e.getMessage() + 
+                "\n\n💡 请尝试更清晰的表达，如：'为张三创建订单，商品苹果10个单价5元'";
+        }
+    }
+
+    /**
+     * 智能检测缺失信息并生成询问
+     */
+    private String detectMissingInfoAndAsk(OrderContext context) {
+        List<String> missingItems = new ArrayList<>();
+        List<String> questions = new ArrayList<>();
+        
+        // 检查客户信息
+        if (context.getCustomerName().isEmpty()) {
+            missingItems.add("客户信息");
+            
+            // 根据订单类型生成相应的询问
+            if ("PURCHASE".equals(context.getOrderType())) {
+                questions.add("🏪 请问是从哪个供应商采购？");
+            } else {
+                questions.add("👤 请问订单是给哪位客户的？");
+            }
+        }
+        
+        // 检查商品信息
+        if (context.getProductList().isEmpty()) {
+            missingItems.add("商品信息");
+            questions.add("📦 请问需要什么商品？（例如：苹果10个单价5元）");
+        } else {
+            // 检查商品详细信息
+            boolean hasMissingPrice = false;
+            List<String> incompleteProducts = new ArrayList<>();
+            
+            for (ProductInfo product : context.getProductList()) {
+                if (product.name.isEmpty()) {
+                    incompleteProducts.add("商品名称");
+                }
+                if (product.quantity <= 0) {
+                    incompleteProducts.add("商品数量");
+                }
+                // 检查价格是否为0或负数
+                if (product.unitPrice <= 0) {
+                    hasMissingPrice = true;
+                }
+            }
+            
+            if (!incompleteProducts.isEmpty()) {
+                missingItems.addAll(incompleteProducts);
+                questions.add("📝 商品信息不完整，请补充" + String.join("、", incompleteProducts));
+            }
+            
+            // 单独处理价格缺失情况
+            if (hasMissingPrice) {
+                missingItems.add("商品价格");
+                
+                // 根据订单类型提供不同的价格询问
+                if ("PURCHASE".equals(context.getOrderType())) {
+                    questions.add("💰 请提供商品的采购单价（例如：单价5元/个）");
+                } else {
+                    questions.add("💰 请提供商品的销售单价（例如：单价5元/个）");
                 }
             }
         }
         
-        // 2. 从原始输入中基于关键词识别
-        if (root.has("original_input")) {
-            String input = root.get("original_input").asText().toLowerCase();
-            String detectedType = detectOrderTypeFromText(input);
-            if (!detectedType.isEmpty()) {
-                System.out.println("📦 从文本识别订单类型: " + detectedType);
-                return detectedType;
-            }
-        }
-        
-        // 3. 尝试从其他字段推断
-        String allText = root.toString().toLowerCase();
-        String inferredType = detectOrderTypeFromText(allText);
-        if (!inferredType.isEmpty()) {
-            System.out.println("📦 从JSON推断订单类型: " + inferredType);
-            return inferredType;
-        }
-        
-        // 4. 默认为销售订单
-        System.out.println("📦 使用默认订单类型: SALE");
-        return "SALE";
-    }
-
-    /**
-     * 从文本中检测订单类型
-     */
-    private String detectOrderTypeFromText(String text) {
-        if (text == null || text.trim().isEmpty()) {
-            return "";
-        }
-        
-        // 采购关键词 - 优先级更高，因为销售是默认
-        String[] purchaseKeywords = {
-            "采购", "进货", "购买", "进料", "补货", "订购", "进仓", "入库",
-            "从供应商", "向厂家", "向供应商", "从厂家", "供应商", "厂家", 
-            "批发", "进购", "采买", "购进", "收货", "进材料", "买材料"
-        };
-        
-        for (String keyword : purchaseKeywords) {
-            if (text.contains(keyword)) {
-                return "PURCHASE";
-            }
-        }
-        
-        // 销售关键词
-        String[] saleKeywords = {
-            "销售", "出售", "卖给", "售给", "发货", "交付", "为客户", "给客户",
-            "销", "卖", "售", "出货", "零售", "批售", "出售给", "卖出",
-            "客户订单", "销售订单", "出库", "发给"
-        };
-        
-        for (String keyword : saleKeywords) {
-            if (text.contains(keyword)) {
-                return "SALE";
-            }
-        }
-        
-        return ""; // 无法确定
-    }
-
-    /**
-     * 智能提取客户信息
-     */
-    private String smartExtractCustomer(JsonNode root) {
-        // 尝试多种字段名和格式
-        String[] customerFields = {"customer", "customer_name", "customerName", "client", "supplier", "供应商", "客户"};
-        
-        for (String field : customerFields) {
-            if (root.has(field) && !root.get(field).asText().trim().isEmpty()) {
-                return root.get(field).asText().trim();
-            }
-        }
-        
-        // 尝试从原始指令中提取（如果有的话）
-        if (root.has("original_input")) {
-            String input = root.get("original_input").asText();
-            // 使用正则表达式匹配常见模式
-            return extractCustomerFromText(input);
-        }
-        
-        return "";
-    }
-
-    /**
-     * 从文本中提取客户名称 - 增强版
-     */
-    private String extractCustomerFromText(String text) {
-        if (text == null || text.trim().isEmpty()) {
-            return "";
-        }
-        
-        // 更全面的客户表达模式 - 新增更多匹配模式
-        String[] patterns = {
-            // 基础创建模式
-            "为\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*创建",     // 为张三创建
-            "给\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*创建",     // 给张三创建 
-            "帮\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*创建",     // 帮张三创建
-            "为\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*下",       // 为张三下单
-            "给\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*下",       // 给张三下单
-            "帮\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*买",       // 帮张三买
+        // 如果有缺失信息，生成友好的询问回复
+        if (!missingItems.isEmpty()) {
+            StringBuilder response = new StringBuilder();
             
-            // 🆕 新增：从XX处/那里购买的模式
-            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*那里",     // 从哈振宇那里
-            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*这里",     // 从张三这里
-            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*处",       // 从李四处
-            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*买",       // 从王五买
-            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*购买",     // 从张三购买
-            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*进",       // 从供应商进
-            "向\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*买",       // 向厂家买
-            "向\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*购买",     // 向供应商购买
+            // 🧠 根据已有信息智能生成个性化询问
+            if (!context.getCustomerName().isEmpty()) {
+                response.append("🤝 好的，为").append(context.getCustomerName()).append("创建订单！");
+            } else {
+                response.append("🤔 好的，我来帮您创建订单！");
+            }
             
-            // 🆕 新增：销售给XX的模式  
-            "卖给\\s*([\\u4e00-\\u9fa5a-zA-Z]+)",           // 卖给张三
-            "售给\\s*([\\u4e00-\\u9fa5a-zA-Z]+)",           // 售给李四
-            "发给\\s*([\\u4e00-\\u9fa5a-zA-Z]+)",           // 发给王五
-            "交付给\\s*([\\u4e00-\\u9fa5a-zA-Z]+)",         // 交付给客户
-            "出售给\\s*([\\u4e00-\\u9fa5a-zA-Z]+)",         // 出售给张三
+            if (questions.size() == 1) {
+                response.append("还需要一个信息：\n\n");
+            } else {
+                response.append("还需要补充一些信息：\n\n");
+            }
             
-            // 标准格式
-            "客户[:：]?\\s*([\\u4e00-\\u9fa5a-zA-Z]+)",      // 客户：张三
-            "供应商[:：]?\\s*([\\u4e00-\\u9fa5a-zA-Z]+)",    // 供应商：张三
-            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*的订单",          // 张三的订单
-            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*要",             // 张三要
-            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*订购",           // 张三订购
-            
-            // 🆕 新增：灵活的中文表达模式
-            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*说",             // 张三说
-            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*需要",           // 李四需要  
-            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*想要",           // 王五想要
-            "和\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*",         // 和张三
-            "跟\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*"          // 跟李四
-        };
-        
-        for (String pattern : patterns) {
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
-            java.util.regex.Matcher m = p.matcher(text);
-            if (m.find()) {
-                String customerName = m.group(1).trim();
-                // 过滤掉一些明显不是客户名的词 - 扩展过滤词汇
-                if (!isInvalidCustomerName(customerName)) {
-                    System.out.println("🎯 从文本中提取到客户: " + customerName);
-                    return customerName;
+            for (int i = 0; i < questions.size(); i++) {
+                response.append(questions.get(i));
+                if (i < questions.size() - 1) {
+                    response.append("\n");
                 }
             }
+            
+            // 🧠 智能示例生成
+            response.append("\n\n💡 您可以这样回复：");
+            
+            // 根据具体情况生成更精准的示例
+            if (missingItems.contains("客户信息") && missingItems.contains("商品信息")) {
+                response.append("\n'为张三订购苹果10个单价5元'");
+            } else if (missingItems.contains("客户信息")) {
+                response.append("\n'客户是张三' 或 '给李四'");
+                // 如果已有商品信息，提供更具体的示例
+                if (!context.getProductList().isEmpty()) {
+                    String productName = context.getProductList().get(0).name;
+                    if (!productName.isEmpty()) {
+                        response.append(" 或 '卖给王五'");
+                    }
+                }
+            } else if (missingItems.contains("商品信息")) {
+                response.append("\n'苹果10个单价5元' 或 '香蕉20个每个3元'");
+            } else if (missingItems.contains("商品价格")) {
+                // 🧠 根据商品名生成具体的价格示例
+                if (!context.getProductList().isEmpty()) {
+                    String productName = context.getProductList().get(0).name;
+                    if (!productName.isEmpty()) {
+                        response.append("\n'").append(productName).append("单价5元' 或 '每个3元'");
+                    } else {
+                        response.append("\n'单价3元/个' 或 '每个5元'");
+                    }
+                } else {
+                    response.append("\n'单价3元/个' 或 '每个5元'");
+                }
+            }
+            
+            // 🧠 添加智能提示
+            String orderTypeHint = "PURCHASE".equals(context.getOrderType()) ? "采购" : "销售";
+            if (missingItems.size() == 1 && missingItems.contains("商品价格")) {
+                response.append("\n\n💭 这是一个").append(orderTypeHint).append("订单");
+            }
+            
+            return response.toString();
         }
         
-        return "";
+        return ""; // 没有缺失信息
     }
     
     /**
-     * 🆕 判断是否为无效的客户名
+     * 保存订单上下文
      */
-    private boolean isInvalidCustomerName(String name) {
-        if (name == null || name.trim().isEmpty()) {
-            return true;
-        }
+    private void saveOrderContext(String sessionId, OrderContext context) {
+        // 如果sessionId为空，生成一个随机ID
+        String contextId = sessionId.isEmpty() ? UUID.randomUUID().toString() : sessionId;
+        context.setLastUpdateTime(System.currentTimeMillis());
+        orderContextCache.put(contextId, context);
         
-        // 扩展的无效客户名词汇列表
-        String[] invalidNames = {
-            // 操作词汇
-            "创建", "订单", "下单", "购买", "买", "卖", "销售", "查询", "删除",
-            // 商品词汇
-            "商品", "苹果", "橙子", "香蕉", "梨子", "葡萄", "西瓜", "草莓", "芒果", "桃子", "樱桃",
-            "大米", "面粉", "面条", "馒头", "包子", "饺子", "汤圆", "水", "饮料", "牛奶",
-            "鸡蛋", "鱼", "肉", "鸡", "鸭", "猪肉", "牛肉", "羊肉",
-            "青菜", "白菜", "萝卜", "土豆", "西红柿", "黄瓜", "茄子",
-            // 数量单位词汇
-            "数量", "单价", "价格", "元", "块", "钱", "个", "件", "只", "瓶", "袋", "箱", "斤", "公斤",
-            // 其他系统词汇
-            "订单", "客户", "供应商", "那里", "这里", "地方", "处"
-        };
-        
-        String lowerName = name.toLowerCase();
-        for (String invalid : invalidNames) {
-            if (lowerName.equals(invalid) || lowerName.equals(invalid.toLowerCase())) {
-                return true;
-            }
-        }
-        
-        // 检查是否只包含数字（可能是误识别的数量）
-        if (name.matches("^\\d+$")) {
-            return true;
-        }
-        
-        return false;
-    }
-
-    /**
-     * 智能提取商品列表 - 增强版
-     */
-    private List<ProductInfo> smartExtractProducts(JsonNode root) {
-        List<ProductInfo> products = new ArrayList<>();
-        
-        // 尝试从products数组提取
-        String[] productArrayFields = {"products", "goods", "items", "商品", "货物"};
-        for (String field : productArrayFields) {
-            if (root.has(field) && root.get(field).isArray()) {
-                JsonNode array = root.get(field);
-                for (JsonNode item : array) {
-                    ProductInfo product = extractProductFromNode(item);
-                    if (product != null) {
-                        System.out.println("🛒 从数组提取商品: " + product.name + " x" + product.quantity + " @" + product.unitPrice);
-                        products.add(product);
-                    }
-                }
-                break;
-            }
-        }
-        
-        // 如果没有找到数组，尝试单个产品字段
-        if (products.isEmpty()) {
-            ProductInfo singleProduct = extractSingleProduct(root);
-            if (singleProduct != null) {
-                System.out.println("🛒 提取单个商品: " + singleProduct.name + " x" + singleProduct.quantity + " @" + singleProduct.unitPrice);
-                products.add(singleProduct);
-            }
-        }
-        
-        // 如果还是没有商品，尝试从原始输入中用正则表达式提取
-        if (products.isEmpty() && root.has("original_input")) {
-            String input = root.get("original_input").asText();
-            ProductInfo extractedProduct = extractProductFromText(input);
-            if (extractedProduct != null) {
-                System.out.println("🛒 从文本提取商品: " + extractedProduct.name + " x" + extractedProduct.quantity + " @" + extractedProduct.unitPrice);
-                products.add(extractedProduct);
-            }
-        }
-        
-        return products;
-    }
-
-    /**
-     * 从文本中提取商品信息 - 正则表达式方法
-     */
-    private ProductInfo extractProductFromText(String text) {
-        if (text == null || text.trim().isEmpty()) {
-            return null;
-        }
-        
-        // 🆕 大幅扩展商品名提取：涵盖更多常见商品
-        String[] productPatterns = {
-            // 🆕 饮品类 - 新增
-            "(水|饮用水|矿泉水|纯净水|饮料|可乐|雪碧|果汁|茶|咖啡|奶茶|豆浆)",
-            
-            // 水果类 - 保持原有
-            "(苹果|橙子|香蕉|梨子|葡萄|西瓜|草莓|芒果|桃子|樱桃|柠檬|橘子|柚子|猕猴桃|火龙果|榴莲)",
-            
-            // 🆕 主食类 - 扩展
-            "(大米|面粉|面条|馒头|包子|饺子|汤圆|米饭|面包|饼干|蛋糕|粥|粉条|河粉|方便面)",
-            
-            // 🆕 乳制品类 - 扩展  
-            "(鸡蛋|牛奶|酸奶|奶酪|黄油|奶粉|豆奶|酸奶|乳制品)",
-            
-            // 🆕 肉类 - 扩展
-            "(鱼|肉|鸡|鸭|猪肉|牛肉|羊肉|火腿|香肠|腊肉|培根|鸡翅|鸡腿|排骨)",
-            
-            // 🆕 蔬菜类 - 扩展
-            "(青菜|白菜|萝卜|土豆|西红柿|黄瓜|茄子|豆角|辣椒|洋葱|蒜|姜|韭菜|菠菜|芹菜)",
-            
-            // 🆕 日用品类 - 新增
-            "(纸巾|卫生纸|洗发水|沐浴露|牙膏|牙刷|毛巾|香皂|洗衣粉|洗洁精)",
-            
-            // 🆕 通用商品词 - 灵活匹配
-            "([\\u4e00-\\u9fa5]{1,4}(?:商品|产品|货物|物品|用品))",  // XX商品、XX产品等
-            "([\\u4e00-\\u9fa5]{2,6})"  // 2-6个中文字符的通用商品名
-        };
-        
-        String productName = "";
-        for (String pattern : productPatterns) {
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
-            java.util.regex.Matcher m = p.matcher(text);
-            if (m.find()) {
-                String candidate = m.group(1);
-                // 🆕 添加更严格的商品名验证
-                if (isValidProductName(candidate)) {
-                    productName = candidate;
-                    break;
-                }
-            }
-        }
-        
-        if (productName.isEmpty()) {
-            return null;
-        }
-        
-        // 🆕 大幅优化数量提取：支持更多表达方式
-        int quantity = 0;
-        String[] quantityPatterns = {
-            // 基础数量模式
-            "(\\d+)\\s*个\\s*" + productName,               // 5个水
-            "(\\d+)\\s*瓶\\s*" + productName,               // 5瓶水
-            "(\\d+)\\s*件\\s*" + productName,               // 5件商品
-            "(\\d+)\\s*只\\s*" + productName,               // 5只鸡
-            "(\\d+)\\s*袋\\s*" + productName,               // 5袋大米
-            "(\\d+)\\s*箱\\s*" + productName,               // 5箱饮料
-            "(\\d+)\\s*斤\\s*" + productName,               // 5斤苹果
-            "(\\d+)\\s*公斤\\s*" + productName,             // 5公斤米
-            
-            // 🆕 倒序模式：商品+数量
-            productName + "\\s*(\\d+)\\s*个",               // 水5个
-            productName + "\\s*(\\d+)\\s*瓶",               // 水5瓶
-            productName + "\\s*(\\d+)\\s*件",               // 商品5件
-            
-            // 🆕 灵活的中文表达
-            "(\\d+)\\s*" + productName,                     // 5水（简化表达）
-            productName + "\\s*(\\d+)",                     // 水5（简化表达）
-            "买\\s*(\\d+)\\s*" + productName,              // 买5个水
-            "要\\s*(\\d+)\\s*" + productName,              // 要5瓶水
-            "需要\\s*(\\d+)\\s*" + productName,            // 需要5件商品
-            
-            // 通用数量模式
-            "数量\\s*(\\d+)",                               // 数量5
-            "(\\d+)\\s*(?:个|瓶|件|只|袋|箱|斤|公斤)",      // 数字+单位
-        };
-        
-        for (String pattern : quantityPatterns) {
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
-            java.util.regex.Matcher m = p.matcher(text);
-            if (m.find()) {
-                try {
-                    quantity = Integer.parseInt(m.group(1));
-                    if (quantity > 0) {
-                        break; // 找到有效数量就停止
-                    }
-                } catch (NumberFormatException e) {
-                    // 忽略解析错误，继续尝试下一个模式
-                }
-            }
-        }
-        
-        // 🆕 大幅优化单价提取：支持更多价格表达
-        float unitPrice = 0.0f;
-        String[] pricePatterns = {
-            // 🆕 "一瓶X元"、"每个X元"模式
-            "一\\s*瓶\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一瓶3元
-            "一\\s*个\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一个5元
-            "一\\s*件\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一件10元
-            "一\\s*只\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一只20元
-            "一\\s*袋\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一袋30元
-            "一\\s*斤\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一斤8元
-            
-            "每\\s*瓶\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每瓶3元
-            "每\\s*个\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每个5元
-            "每\\s*件\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每件10元
-            "每\\s*只\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每只20元
-            "每\\s*袋\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每袋30元
-            "每\\s*斤\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每斤8元
-            
-            // 基础价格模式
-            "(\\d+(?:\\.\\d+)?)\\s*元\\s*一",                // 3元一瓶
-            "(\\d+(?:\\.\\d+)?)\\s*块\\s*一",                // 3块一个
-            "(\\d+(?:\\.\\d+)?)\\s*钱\\s*一",                // 3钱一件
-            
-            // 标准价格模式 - 保持原有
-            "(\\d+(?:\\.\\d+)?)\\s*元",                      // 3元
-            "(\\d+(?:\\.\\d+)?)\\s*块",                      // 3块
-            "(\\d+(?:\\.\\d+)?)\\s*钱",                      // 3钱
-            "单价\\s*(\\d+(?:\\.\\d+)?)",                    // 单价3
-            "价格\\s*(\\d+(?:\\.\\d+)?)",                    // 价格3
-            
-            // 🆕 通用价格模式
-            "([0-9]+(?:\\.[0-9]+)?)\\s*(?:元|块|钱|￥|¥)",   // 支持￥符号
-        };
-        
-        for (String pattern : pricePatterns) {
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
-            java.util.regex.Matcher m = p.matcher(text);
-            if (m.find()) {
-                try {
-                    unitPrice = Float.parseFloat(m.group(1));
-                    if (unitPrice >= 0) {
-                        break; // 找到有效价格就停止
-                    }
-                } catch (NumberFormatException e) {
-                    // 忽略解析错误，继续尝试下一个模式
-                }
-            }
-        }
-        
-        // 如果至少有商品名和数量，就创建商品信息
-        if (!productName.isEmpty() && quantity > 0) {
-            System.out.println(String.format("🛒 成功提取商品信息: %s × %d @ ¥%.2f", productName, quantity, unitPrice));
-            return new ProductInfo(productName, quantity, unitPrice);
-        }
-        
-        return null;
+        // 清理过期上下文
+        cleanupExpiredContexts();
     }
     
     /**
-     * 🆕 验证商品名是否有效
+     * 获取订单上下文
      */
-    private boolean isValidProductName(String name) {
-        if (name == null || name.trim().isEmpty()) {
-            return false;
+    private OrderContext getOrderContext(String sessionId) {
+        if (sessionId.isEmpty()) {
+            // 如果sessionId为空，返回任意一个未完成的上下文（简化处理）
+            return orderContextCache.values().stream()
+                .findFirst()
+                .orElse(null);
+        }
+        return orderContextCache.get(sessionId);
+    }
+    
+    /**
+     * 删除订单上下文
+     */
+    private void removeOrderContext(String sessionId) {
+        if (!sessionId.isEmpty()) {
+            orderContextCache.remove(sessionId);
+        } else {
+            // 如果sessionId为空，清空所有上下文（简化处理）
+            orderContextCache.clear();
+        }
+    }
+    
+    /**
+     * 检查是否有未完成的订单上下文
+     */
+    private boolean hasIncompleteOrderContext(String sessionId) {
+        OrderContext context = getOrderContext(sessionId);
+        return context != null;
+    }
+    
+    /**
+     * 清理过期上下文
+     */
+    private void cleanupExpiredContexts() {
+        long currentTime = System.currentTimeMillis();
+        List<String> expiredKeys = orderContextCache.entrySet().stream()
+            .filter(entry -> (currentTime - entry.getValue().getLastUpdateTime()) > CONTEXT_TIMEOUT)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toList());
+        
+        for (String key : expiredKeys) {
+            orderContextCache.remove(key);
+        }
+    }
+    
+    /**
+     * 订单上下文类 - 存储订单创建过程中的信息
+     */
+    private static class OrderContext {
+        private String orderType;
+        private String customerName;
+        private List<ProductInfo> productList;
+        private long lastUpdateTime;
+        private String originalInput; // 保存原始输入，用于智能推理
+        private List<String> clarificationHistory; // 澄清历史
+        
+        public OrderContext(String orderType, String customerName, List<ProductInfo> productList) {
+            this.orderType = orderType;
+            this.customerName = customerName;
+            this.productList = new ArrayList<>(productList);
+            this.lastUpdateTime = System.currentTimeMillis();
+            this.clarificationHistory = new ArrayList<>();
         }
         
-        // 过滤明显不是商品的词汇
-        String[] invalidProducts = {
-            "创建", "订单", "查询", "删除", "买", "卖", "购买", "销售",
-            "客户", "供应商", "数量", "单价", "价格", "元", "块", "钱",
-            "个", "件", "只", "瓶", "袋", "箱", "斤", "公斤", "那里", "这里", "处"
-        };
+        public String getOrderType() {
+            return orderType;
+        }
         
-        String lowerName = name.toLowerCase();
-        for (String invalid : invalidProducts) {
-            if (lowerName.equals(invalid) || lowerName.equals(invalid.toLowerCase())) {
-                return false;
+        public String getCustomerName() {
+            return customerName;
+        }
+        
+        public List<ProductInfo> getProductList() {
+            return productList;
+        }
+        
+        public long getLastUpdateTime() {
+            return lastUpdateTime;
+        }
+        
+        public void setLastUpdateTime(long lastUpdateTime) {
+            this.lastUpdateTime = lastUpdateTime;
+        }
+        
+        public String getOriginalInput() {
+            return originalInput;
+        }
+        
+        public void setOriginalInput(String originalInput) {
+            this.originalInput = originalInput;
+        }
+        
+        public List<String> getClarificationHistory() {
+            return clarificationHistory;
+        }
+        
+        public void addClarification(String clarification) {
+            this.clarificationHistory.add(clarification);
+        }
+    }
+    
+    /**
+     * 客户偏好类 - 记住客户的购买偏好
+     */
+    private static class CustomerPreference {
+        private List<String> frequentProducts; // 常买商品
+        private Map<String, Float> preferredPrices; // 偏好价格
+        private String preferredOrderType; // 偏好订单类型
+        private long lastOrderTime; // 最后下单时间
+        
+        public CustomerPreference() {
+            this.frequentProducts = new ArrayList<>();
+            this.preferredPrices = new HashMap<>();
+            this.lastOrderTime = System.currentTimeMillis();
+        }
+        
+        // Getters and setters
+        public List<String> getFrequentProducts() { return frequentProducts; }
+        public Map<String, Float> getPreferredPrices() { return preferredPrices; }
+        public String getPreferredOrderType() { return preferredOrderType; }
+        public void setPreferredOrderType(String preferredOrderType) { this.preferredOrderType = preferredOrderType; }
+        public long getLastOrderTime() { return lastOrderTime; }
+        public void setLastOrderTime(long lastOrderTime) { this.lastOrderTime = lastOrderTime; }
+    }
+    
+    /**
+     * 智能推理引擎类 - 提供各种智能推理功能
+     */
+    private class SmartInferenceEngine {
+        
+        /**
+         * 智能推断缺失信息
+         */
+        public OrderContext smartInferMissingInfo(OrderContext context, String userInput) {
+            // 1. 基于历史偏好推断客户
+            if (context.getCustomerName().isEmpty()) {
+                String inferredCustomer = inferCustomerFromHistory(userInput);
+                if (!inferredCustomer.isEmpty()) {
+                    context.customerName = inferredCustomer;
+                    context.addClarification("根据历史记录推断客户：" + inferredCustomer);
+                }
+            }
+            
+            // 2. 基于客户偏好推断商品信息
+            if (!context.getCustomerName().isEmpty() && context.getProductList().isEmpty()) {
+                List<ProductInfo> inferredProducts = inferProductsFromCustomerHistory(context.getCustomerName(), userInput);
+                if (!inferredProducts.isEmpty()) {
+                    context.getProductList().addAll(inferredProducts);
+                    context.addClarification("基于客户历史推断商品信息");
+                }
+            }
+            
+            // 3. 智能推断价格
+            for (ProductInfo product : context.getProductList()) {
+                if (product.unitPrice <= 0 && !product.name.isEmpty()) {
+                    Float inferredPrice = inferPriceFromHistory(product.name, context.getCustomerName());
+                    if (inferredPrice != null && inferredPrice > 0) {
+                        product.unitPrice = inferredPrice;
+                        context.addClarification("使用历史价格：" + product.name + " ¥" + inferredPrice);
+                    }
+                }
+            }
+            
+            return context;
+        }
+        
+        /**
+         * 基于历史记录推断客户
+         */
+        private String inferCustomerFromHistory(String input) {
+            // 检查客户别名映射
+            for (Map.Entry<String, String> entry : customerAliasCache.entrySet()) {
+                if (input.toLowerCase().contains(entry.getKey().toLowerCase())) {
+                    return entry.getValue();
+                }
+            }
+            
+            // 模糊匹配已知客户
+            return findBestCustomerMatch(input);
+        }
+        
+        /**
+         * 基于客户历史推断商品
+         */
+        private List<ProductInfo> inferProductsFromCustomerHistory(String customerName, String input) {
+            List<ProductInfo> inferred = new ArrayList<>();
+            CustomerPreference pref = customerPreferenceCache.get(customerName);
+            
+            if (pref != null && !pref.getFrequentProducts().isEmpty()) {
+                // 检查输入中是否提到了客户常买的商品
+                for (String product : pref.getFrequentProducts()) {
+                    if (containsProduct(input, product)) {
+                        Float price = pref.getPreferredPrices().get(product);
+                        inferred.add(new ProductInfo(product, 1, price != null ? price : 0));
+                    }
+                }
+            }
+            
+            return inferred;
+        }
+        
+        /**
+         * 基于历史推断价格
+         */
+        private Float inferPriceFromHistory(String productName, String customerName) {
+            // 优先使用客户特定的价格偏好
+            CustomerPreference pref = customerPreferenceCache.get(customerName);
+            if (pref != null) {
+                Float customerPrice = pref.getPreferredPrices().get(productName);
+                if (customerPrice != null && customerPrice > 0) {
+                    return customerPrice;
+                }
+            }
+            
+            // 使用全局商品价格缓存
+            return productPriceCache.get(productName);
+        }
+        
+        /**
+         * 检查输入是否包含指定商品
+         */
+        private boolean containsProduct(String input, String product) {
+            return input.toLowerCase().contains(product.toLowerCase());
+        }
+    }
+    
+    // 创建智能推理引擎实例
+    private final SmartInferenceEngine smartEngine = new SmartInferenceEngine();
+    
+    /**
+     * 🧠 智能模糊匹配客户名 - 容错和别名支持
+     */
+    private String findBestCustomerMatch(String input) {
+        if (input == null || input.trim().isEmpty()) {
+            return "";
+        }
+        
+        // 收集所有可能的客户名（从已有订单中学习）
+        List<String> knownCustomers = new ArrayList<>();
+        try {
+            // 获取最近的客户名
+            Page<Order> recentOrders = orderService.getOrdersByType("SALE", 0, 50);
+            knownCustomers = recentOrders.getContent().stream()
+                .map(Order::getCustomerName)
+                .filter(name -> name != null && !name.trim().isEmpty())
+                .distinct()
+                .collect(Collectors.toList());
+        } catch (Exception e) {
+            System.err.println("获取客户历史失败: " + e.getMessage());
+        }
+        
+        // 添加采购订单的供应商名
+        try {
+            Page<Order> purchaseOrders = orderService.getOrdersByType("PURCHASE", 0, 50);
+            knownCustomers.addAll(purchaseOrders.getContent().stream()
+                .map(Order::getCustomerName)
+                .filter(name -> name != null && !name.trim().isEmpty())
+                .distinct()
+                .collect(Collectors.toList()));
+        } catch (Exception e) {
+            System.err.println("获取供应商历史失败: " + e.getMessage());
+        }
+        
+        if (knownCustomers.isEmpty()) {
+            return "";
+        }
+        
+        // 智能匹配算法
+        String bestMatch = "";
+        int bestScore = 0;
+        
+        for (String customer : knownCustomers) {
+            int score = calculateMatchScore(input, customer);
+            if (score > bestScore && score >= 2) { // 至少要有基本的匹配度
+                bestScore = score;
+                bestMatch = customer;
             }
         }
         
-        // 检查长度：商品名应该在合理范围内
-        if (name.length() < 1 || name.length() > 10) {
-            return false;
-        }
-        
-        // 检查是否只包含数字
-        if (name.matches("^\\d+$")) {
-            return false;
-        }
-        
-        return true;
+        return bestMatch;
     }
-
+    
     /**
-     * 从单个节点提取产品信息
+     * 🧠 计算字符串匹配分数 - 智能相似度算法
      */
-    private ProductInfo extractProductFromNode(JsonNode node) {
-        String name = getStringValue(node, "name", "product", "productName", "商品名", "产品名");
-        int quantity = getIntValue(node, "quantity", "qty", "count", "数量", "个数");
-        float unitPrice = getFloatValue(node, "unit_price", "price", "unitPrice", "单价", "价格");
+    private int calculateMatchScore(String input, String target) {
+        if (input == null || target == null) return 0;
         
-        if (!name.isEmpty() && quantity > 0) {
-            return new ProductInfo(name, quantity, Math.max(0, unitPrice));
+        String lowerInput = input.toLowerCase();
+        String lowerTarget = target.toLowerCase();
+        
+        int score = 0;
+        
+        // 1. 完全匹配 - 最高分
+        if (lowerInput.contains(lowerTarget) || lowerTarget.contains(lowerInput)) {
+            score += 10;
         }
         
-        return null;
+        // 2. 首字符匹配
+        if (!lowerInput.isEmpty() && !lowerTarget.isEmpty() && 
+            lowerInput.charAt(0) == lowerTarget.charAt(0)) {
+            score += 3;
+        }
+        
+        // 3. 字符重叠度
+        for (char c : lowerTarget.toCharArray()) {
+            if (lowerInput.indexOf(c) >= 0) {
+                score += 1;
+            }
+        }
+        
+        // 4. 长度相似性奖励
+        int lengthDiff = Math.abs(input.length() - target.length());
+        if (lengthDiff <= 1) {
+            score += 2;
+        } else if (lengthDiff <= 2) {
+            score += 1;
+        }
+        
+        return score;
     }
-
+    
     /**
-     * 提取单个产品信息（当没有数组时）
+     * 🧠 学习并更新客户偏好
      */
-    private ProductInfo extractSingleProduct(JsonNode root) {
-        String name = getStringValue(root, "product", "product_name", "商品", "商品名");
-        int quantity = getIntValue(root, "quantity", "qty", "数量");
-        float unitPrice = getFloatValue(root, "unit_price", "price", "单价");
-        
-        if (!name.isEmpty() && quantity > 0) {
-            return new ProductInfo(name, quantity, Math.max(0, unitPrice));
+    private void learnCustomerPreference(String customerName, List<ProductInfo> products, String orderType) {
+        if (customerName == null || customerName.trim().isEmpty() || products.isEmpty()) {
+            return;
         }
         
-        return null;
+        CustomerPreference pref = customerPreferenceCache.computeIfAbsent(customerName, k -> new CustomerPreference());
+        
+        // 更新常买商品
+        for (ProductInfo product : products) {
+            if (!product.name.isEmpty()) {
+                if (!pref.getFrequentProducts().contains(product.name)) {
+                    pref.getFrequentProducts().add(product.name);
+                }
+                
+                // 更新偏好价格（加权平均）
+                if (product.unitPrice > 0) {
+                    Float currentPrice = pref.getPreferredPrices().get(product.name);
+                    if (currentPrice == null) {
+                        pref.getPreferredPrices().put(product.name, product.unitPrice);
+                        productPriceCache.put(product.name, product.unitPrice); // 同时更新全局缓存
+                    } else {
+                        // 加权平均：70%历史价格 + 30%新价格
+                        float weightedPrice = currentPrice * 0.7f + product.unitPrice * 0.3f;
+                        pref.getPreferredPrices().put(product.name, weightedPrice);
+                        productPriceCache.put(product.name, weightedPrice);
+                    }
+                }
+            }
+        }
+        
+        // 更新偏好订单类型
+        pref.setPreferredOrderType(orderType);
+        pref.setLastOrderTime(System.currentTimeMillis());
+        
+        System.out.println("🧠 学习客户偏好: " + customerName + " 喜欢 " + 
+            products.stream().map(p -> p.name).collect(Collectors.joining(", ")));
     }
-
+    
     /**
-     * 产品信息内部类
+     * 🧠 智能纠错和别名学习
      */
-    private static class ProductInfo {
-        String name;
-        int quantity;
-        float unitPrice;
-        
-        ProductInfo(String name, int quantity, float unitPrice) {
-            this.name = name;
-            this.quantity = quantity;
-            this.unitPrice = unitPrice;
+    private String intelligentErrorCorrection(String input, String fieldType) {
+        if (input == null || input.trim().isEmpty()) {
+            return input;
         }
+        
+        // 常见错别字和简写映射
+        Map<String, String> corrections = new HashMap<>();
+        
+        if ("customer".equals(fieldType)) {
+            // 客户名常见错误
+            corrections.put("冯天一", "冯天祎");
+            corrections.put("张3", "张三");
+            corrections.put("李4", "李四");
+            corrections.put("老张", "张三");
+            corrections.put("小李", "李四");
+            corrections.put("小王", "王五");
+        } else if ("product".equals(fieldType)) {
+            // 商品名常见错误和简写
+            corrections.put("苹果🍎", "苹果");
+            corrections.put("apple", "苹果");
+            corrections.put("water", "水");
+            corrections.put("🍎", "苹果");
+            corrections.put("🍌", "香蕉");
+            corrections.put("🍊", "橙子");
+            corrections.put("💧", "水");
+            corrections.put("饮用水", "水");
+            corrections.put("矿泉水", "水");
+        }
+        
+        // 检查是否需要纠错
+        for (Map.Entry<String, String> entry : corrections.entrySet()) {
+            if (input.toLowerCase().contains(entry.getKey().toLowerCase())) {
+                String corrected = input.replace(entry.getKey(), entry.getValue());
+                System.out.println("🔧 智能纠错: " + input + " → " + corrected);
+                return corrected;
+            }
+        }
+        
+        return input;
+    }
+    
+    /**
+     * 🧠 智能生成建议和提示
+     */
+    private String generateSmartSuggestions(OrderContext context) {
+        StringBuilder suggestions = new StringBuilder();
+        
+        // 基于客户历史生成建议
+        if (!context.getCustomerName().isEmpty()) {
+            CustomerPreference pref = customerPreferenceCache.get(context.getCustomerName());
+            if (pref != null && !pref.getFrequentProducts().isEmpty()) {
+                suggestions.append("💡 ").append(context.getCustomerName()).append("常买商品：");
+                suggestions.append(pref.getFrequentProducts().stream()
+                    .limit(3)  // 只显示前3个
+                    .collect(Collectors.joining("、")));
+                suggestions.append("\n");
+            }
+        }
+        
+        // 基于商品历史生成价格建议
+        for (ProductInfo product : context.getProductList()) {
+            if (!product.name.isEmpty() && product.unitPrice <= 0) {
+                Float suggestedPrice = productPriceCache.get(product.name);
+                if (suggestedPrice != null && suggestedPrice > 0) {
+                    suggestions.append("💰 ").append(product.name)
+                        .append("建议价格：¥").append(String.format("%.2f", suggestedPrice)).append("\n");
+                }
+            }
+        }
+        
+        return suggestions.toString();
+    }
+    
+    /**
+     * 🧠 智能对话式确认
+     */
+    private String generateSmartConfirmation(OrderContext context) {
+        StringBuilder confirmation = new StringBuilder();
+        confirmation.append("📋 请确认订单信息：\n\n");
+        
+        // 订单类型
+        String typeDesc = "PURCHASE".equals(context.getOrderType()) ? "采购" : "销售";
+        String typeIcon = "PURCHASE".equals(context.getOrderType()) ? "📦" : "💰";
+        confirmation.append(typeIcon).append(" 订单类型：").append(typeDesc).append("\n");
+        
+        // 客户信息
+        if (!context.getCustomerName().isEmpty()) {
+            String partnerLabel = "PURCHASE".equals(context.getOrderType()) ? "供应商" : "客户";
+            confirmation.append("👤 ").append(partnerLabel).append("：").append(context.getCustomerName()).append("\n");
+        }
+        
+        // 商品明细
+        if (!context.getProductList().isEmpty()) {
+            confirmation.append("📦 商品明细：\n");
+            float totalAmount = 0;
+            for (ProductInfo product : context.getProductList()) {
+                float itemTotal = product.quantity * product.unitPrice;
+                totalAmount += itemTotal;
+                confirmation.append("  • ").append(product.name)
+                    .append(" × ").append(product.quantity)
+                    .append(" @ ¥").append(String.format("%.2f", product.unitPrice))
+                    .append(" = ¥").append(String.format("%.2f", itemTotal)).append("\n");
+            }
+            confirmation.append("💵 总金额：¥").append(String.format("%.2f", totalAmount)).append("\n");
+        }
+        
+        // 智能推理历史
+        if (!context.getClarificationHistory().isEmpty()) {
+            confirmation.append("\n🤖 AI推理：\n");
+            for (String clarification : context.getClarificationHistory()) {
+                confirmation.append("  • ").append(clarification).append("\n");
+            }
+        }
+        
+        confirmation.append("\n💬 确认创建请回复：'确认' 或 '是的'\n");
+        confirmation.append("💬 需要修改请直接说明：'客户改为XX' 或 '价格改为XX元'");
+        
+        return confirmation.toString();
     }
 
     /**
@@ -1152,5 +1612,661 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             case "cancelled", "已取消" -> "❌";
             default -> "📝";
         };
+    }
+
+    /**
+     * 产品信息内部类
+     */
+    private static class ProductInfo {
+        String name;
+        int quantity;
+        float unitPrice;
+        
+        ProductInfo(String name, int quantity, float unitPrice) {
+            this.name = name;
+            this.quantity = quantity;
+            this.unitPrice = unitPrice;
+        }
+    }
+
+    /**
+     * 判断输入是否仅包含价格信息
+     */
+    private boolean isPriceOnlyInput(String input) {
+        if (input == null || input.trim().isEmpty()) {
+            return false;
+        }
+        
+        // 价格专用模式
+        String[] priceOnlyPatterns = {
+            "^\\s*单价\\s*\\d+(?:\\.\\d+)?\\s*元?\\s*$",                  // 单价5元
+            "^\\s*价格\\s*\\d+(?:\\.\\d+)?\\s*元?\\s*$",                  // 价格5元
+            "^\\s*\\d+(?:\\.\\d+)?\\s*元/?(?:个|瓶|件|只|袋|箱|斤)\\s*$",  // 5元/个
+            "^\\s*\\d+(?:\\.\\d+)?\\s*[块钱]/?(?:个|瓶|件|只|袋|箱|斤)?\\s*$", // 5块一个
+            "^\\s*每\\s*(?:个|瓶|件|只|袋|箱|斤)\\s*\\d+(?:\\.\\d+)?\\s*元?\\s*$", // 每个5元
+            "^\\s*一\\s*(?:个|瓶|件|只|袋|箱|斤)\\s*\\d+(?:\\.\\d+)?\\s*元?\\s*$", // 一个5元
+            "^\\s*[\\u4e00-\\u9fa5]*单价\\s*\\d+(?:\\.\\d+)?\\s*元?\\s*$",  // 水单价5元
+        };
+        
+        for (String pattern : priceOnlyPatterns) {
+            if (input.matches(pattern)) {
+                return true;
+            }
+        }
+        
+        // 更宽松的判断：短文本且包含价格关键词和数字
+        if (input.length() < 20 && 
+            (input.contains("元") || input.contains("块") || input.contains("钱") || 
+             input.contains("单价") || input.contains("价格") || input.contains("每个") ||
+             input.contains("一瓶") || input.contains("一个"))) {
+            
+            // 确保有数字
+            return input.matches(".*\\d+.*");
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 从仅包含价格信息的输入中提取价格
+     */
+    private float extractPriceOnly(String input) {
+        if (input == null || input.trim().isEmpty()) {
+            return 0;
+        }
+        
+        String[] simplePricePatterns = {
+            "(\\d+(?:\\.\\d+)?)\\s*元",                           // 5元
+            "(\\d+(?:\\.\\d+)?)\\s*块",                           // 5块
+            "(\\d+(?:\\.\\d+)?)\\s*钱",                           // 5钱
+            "单价\\s*(\\d+(?:\\.\\d+)?)",                         // 单价5
+            "价格\\s*(\\d+(?:\\.\\d+)?)",                         // 价格5
+            "[\\u4e00-\\u9fa5]*单价\\s*(\\d+(?:\\.\\d+)?)",       // 水单价5
+            "(\\d+(?:\\.\\d+)?)\\s*元/?(?:个|瓶|件|只|袋|箱|斤)",   // 5元/个
+            "每\\s*(?:个|瓶|件|只|袋|箱|斤)\\s*(\\d+(?:\\.\\d+)?)", // 每个5
+            "一\\s*(?:个|瓶|件|只|袋|箱|斤)\\s*(\\d+(?:\\.\\d+)?)", // 一个5
+        };
+        
+        for (String pattern : simplePricePatterns) {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+            java.util.regex.Matcher m = p.matcher(input);
+            if (m.find()) {
+                try {
+                    return Float.parseFloat(m.group(1));
+                } catch (NumberFormatException e) {
+                    // 继续尝试下一个模式
+                }
+            }
+        }
+        
+        // 兜底方案：尝试提取任何数字
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile("(\\d+(?:\\.\\d+)?)");
+        java.util.regex.Matcher m = p.matcher(input);
+        if (m.find()) {
+            try {
+                return Float.parseFloat(m.group(1));
+            } catch (NumberFormatException e) {
+                // 忽略并返回0
+            }
+        }
+        
+        return 0;
+    }
+
+    /**
+     * 智能提取订单类型 - 增强版
+     */
+    private String smartExtractOrderType(JsonNode root) {
+        // 1. 尝试从JSON字段中提取
+        String[] typeFields = {"order_type", "type", "orderType", "order_type"};
+        for (String field : typeFields) {
+            if (root.has(field)) {
+                String type = root.get(field).asText().toUpperCase();
+                if (type.equals("SALE") || type.equals("PURCHASE")) {
+                    System.out.println("📦 从字段提取订单类型: " + type);
+                    return type;
+                }
+            }
+        }
+        
+        // 2. 从原始输入中基于关键词识别
+        if (root.has("original_input")) {
+            String input = root.get("original_input").asText().toLowerCase();
+            String detectedType = detectOrderTypeFromText(input);
+            if (!detectedType.isEmpty()) {
+                System.out.println("📦 从文本识别订单类型: " + detectedType);
+                return detectedType;
+            }
+        }
+        
+        // 3. 尝试从其他字段推断
+        String allText = root.toString().toLowerCase();
+        String inferredType = detectOrderTypeFromText(allText);
+        if (!inferredType.isEmpty()) {
+            System.out.println("📦 从JSON推断订单类型: " + inferredType);
+            return inferredType;
+        }
+        
+        // 4. 默认为销售订单
+        System.out.println("📦 使用默认订单类型: SALE");
+        return "SALE";
+    }
+
+    /**
+     * 从文本中检测订单类型
+     */
+    private String detectOrderTypeFromText(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return "";
+        }
+        
+        // 采购关键词 - 优先级更高，因为销售是默认
+        String[] purchaseKeywords = {
+            "采购", "进货", "购买", "进料", "补货", "订购", "进仓", "入库",
+            "从供应商", "向厂家", "向供应商", "从厂家", "供应商", "厂家", 
+            "批发", "进购", "采买", "购进", "收货", "进材料", "买材料"
+        };
+        
+        for (String keyword : purchaseKeywords) {
+            if (text.contains(keyword)) {
+                return "PURCHASE";
+            }
+        }
+        
+        // 销售关键词
+        String[] saleKeywords = {
+            "销售", "出售", "卖给", "售给", "发货", "交付", "为客户", "给客户",
+            "销", "卖", "售", "出货", "零售", "批售", "出售给", "卖出",
+            "客户订单", "销售订单", "出库", "发给"
+        };
+        
+        for (String keyword : saleKeywords) {
+            if (text.contains(keyword)) {
+                return "SALE";
+            }
+        }
+        
+        return ""; // 无法确定
+    }
+
+    /**
+     * 智能提取客户信息
+     */
+    private String smartExtractCustomer(JsonNode root) {
+        // 尝试多种字段名和格式
+        String[] customerFields = {"customer", "customer_name", "customerName", "client", "supplier", "供应商", "客户"};
+        
+        for (String field : customerFields) {
+            if (root.has(field) && !root.get(field).asText().trim().isEmpty()) {
+                return root.get(field).asText().trim();
+            }
+        }
+        
+        // 尝试从原始指令中提取（如果有的话）
+        if (root.has("original_input")) {
+            String input = root.get("original_input").asText();
+            // 使用正则表达式匹配常见模式
+            return extractCustomerFromText(input);
+        }
+        
+        return "";
+    }
+
+    /**
+     * 从文本中提取客户名称 - 增强版
+     */
+    private String extractCustomerFromText(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return "";
+        }
+        
+        // 更全面的客户表达模式 - 新增更多匹配模式
+        String[] patterns = {
+            // 基础创建模式
+            "为\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*创建",     // 为张三创建
+            "给\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*创建",     // 给张三创建 
+            "帮\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*创建",     // 帮张三创建
+            "为\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*下",       // 为张三下单
+            "给\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*下",       // 给张三下单
+            "帮\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*买",       // 帮张三买
+            
+            // 🆕 新增：从XX处/那里购买的模式
+            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*那里",     // 从哈振宇那里
+            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*这里",     // 从张三这里
+            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*处",       // 从李四处
+            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*买",       // 从王五买
+            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*购买",     // 从张三购买
+            "从\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*进",       // 从供应商进
+            "向\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*买",       // 向厂家买
+            "向\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*购买",     // 向供应商购买
+            
+            // 🆕 新增：销售给XX的模式  
+            "卖给了?\\s*([\\u4e00-\\u9fa5a-zA-Z]+?)(?:\\s|$|[\\d一二三四五六七八九十])",       // 卖给张三 / 卖给了张三（非贪婪匹配）
+            "售给\\s*([\\u4e00-\\u9fa5a-zA-Z]+?)(?:\\s|$|[\\d一二三四五六七八九十])",           // 售给李四
+            "发给\\s*([\\u4e00-\\u9fa5a-zA-Z]+?)(?:\\s|$|[\\d一二三四五六七八九十])",           // 发给王五
+            "交付给\\s*([\\u4e00-\\u9fa5a-zA-Z]+?)(?:\\s|$|[\\d一二三四五六七八九十])",         // 交付给客户
+            "出售给\\s*([\\u4e00-\\u9fa5a-zA-Z]+?)(?:\\s|$|[\\d一二三四五六七八九十])",         // 出售给张三
+            "卖了.*给\\s*([\\u4e00-\\u9fa5a-zA-Z]+?)(?:\\s|$|[\\d一二三四五六七八九十])",       // 卖了XX给张三
+            
+            // 标准格式
+            "客户[:：]?\\s*([\\u4e00-\\u9fa5a-zA-Z]+)",      // 客户：张三
+            "供应商[:：]?\\s*([\\u4e00-\\u9fa5a-zA-Z]+)",    // 供应商：张三
+            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*的订单",          // 张三的订单
+            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*要",             // 张三要
+            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*订购",           // 张三订购
+            
+            // 🆕 新增：灵活的中文表达模式
+            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*说",             // 张三说
+            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*需要",           // 李四需要  
+            "([\\u4e00-\\u9fa5a-zA-Z]+)\\s*想要",           // 王五想要
+            "和\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*",         // 和张三
+            "跟\\s*([\\u4e00-\\u9fa5a-zA-Z]+)\\s*"          // 跟李四
+        };
+        
+        for (String pattern : patterns) {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+            java.util.regex.Matcher m = p.matcher(text);
+            if (m.find()) {
+                String customerName = m.group(1).trim();
+                // 过滤掉一些明显不是客户名的词 - 扩展过滤词汇
+                if (!isInvalidCustomerName(customerName)) {
+                    System.out.println("🎯 从文本中提取到客户: " + customerName);
+                    return customerName;
+                }
+            }
+        }
+        
+        return "";
+    }
+    
+    /**
+     * 🆕 判断是否为无效的客户名
+     */
+    private boolean isInvalidCustomerName(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return true;
+        }
+        
+        // 扩展的无效客户名词汇列表
+        String[] invalidNames = {
+            // 操作词汇
+            "创建", "订单", "下单", "购买", "买", "卖", "销售", "查询", "删除",
+            // 商品词汇
+            "商品", "苹果", "橙子", "香蕉", "梨子", "葡萄", "西瓜", "草莓", "芒果", "桃子", "樱桃",
+            "大米", "面粉", "面条", "馒头", "包子", "饺子", "汤圆", "水", "饮料", "牛奶",
+            "鸡蛋", "鱼", "肉", "鸡", "鸭", "猪肉", "牛肉", "羊肉",
+            "青菜", "白菜", "萝卜", "土豆", "西红柿", "黄瓜", "茄子",
+            // 数量单位词汇
+            "数量", "单价", "价格", "元", "块", "钱", "个", "件", "只", "瓶", "袋", "箱", "斤", "公斤",
+            // 数量+单位组合
+            "一瓶", "一个", "一件", "一只", "一袋", "一箱", "一斤", "三瓶", "五个", "十件",
+            // 其他系统词汇
+            "订单", "客户", "供应商", "那里", "这里", "地方", "处"
+        };
+        
+        String lowerName = name.toLowerCase();
+        for (String invalid : invalidNames) {
+            if (lowerName.equals(invalid) || lowerName.equals(invalid.toLowerCase())) {
+                return true;
+            }
+        }
+        
+        // 检查是否只包含数字（可能是误识别的数量）
+        if (name.matches("^\\d+$")) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * 智能提取商品列表 - 增强版
+     */
+    private List<ProductInfo> smartExtractProducts(JsonNode root) {
+        List<ProductInfo> products = new ArrayList<>();
+        
+        // 尝试从products数组提取
+        String[] productArrayFields = {"products", "goods", "items", "商品", "货物"};
+        for (String field : productArrayFields) {
+            if (root.has(field) && root.get(field).isArray()) {
+                JsonNode array = root.get(field);
+                for (JsonNode item : array) {
+                    ProductInfo product = extractProductFromNode(item);
+                    if (product != null) {
+                        System.out.println("🛒 从数组提取商品: " + product.name + " x" + product.quantity + " @" + product.unitPrice);
+                        products.add(product);
+                    }
+                }
+                break;
+            }
+        }
+        
+        // 如果没有找到数组，尝试单个产品字段
+        if (products.isEmpty()) {
+            ProductInfo singleProduct = extractSingleProduct(root);
+            if (singleProduct != null) {
+                System.out.println("🛒 提取单个商品: " + singleProduct.name + " x" + singleProduct.quantity + " @" + singleProduct.unitPrice);
+                products.add(singleProduct);
+            }
+        }
+        
+        // 如果还是没有商品，尝试从原始输入中用正则表达式提取
+        if (products.isEmpty() && root.has("original_input")) {
+            String input = root.get("original_input").asText();
+            ProductInfo extractedProduct = extractProductFromText(input);
+            if (extractedProduct != null) {
+                System.out.println("🛒 从文本提取商品: " + extractedProduct.name + " x" + extractedProduct.quantity + " @" + extractedProduct.unitPrice);
+                products.add(extractedProduct);
+            }
+        }
+        
+        // 检查是否是价格补充信息
+        if (products.isEmpty() && root.has("original_input")) {
+            String input = root.get("original_input").asText().trim();
+            
+            // 检测是否是单纯的价格信息
+            if (isPriceOnlyInput(input)) {
+                float price = extractPriceOnly(input);
+                if (price > 0) {
+                    // 尝试从上下文中提取商品信息
+                    // 这里简化处理，创建一个带有价格但无具体商品信息的对象
+                    ProductInfo priceInfo = new ProductInfo("", 0, price);
+                    System.out.println("💰 提取到价格补充信息: " + price);
+                    products.add(priceInfo);
+                }
+            }
+        }
+        
+        return products;
+    }
+
+    /**
+     * 从单个节点提取产品信息
+     */
+    private ProductInfo extractProductFromNode(JsonNode node) {
+        String name = getStringValue(node, "name", "product", "productName", "商品名", "产品名");
+        int quantity = getIntValue(node, "quantity", "qty", "count", "数量", "个数");
+        float unitPrice = getFloatValue(node, "unit_price", "price", "unitPrice", "单价", "价格");
+        
+        if (!name.isEmpty() && quantity > 0) {
+            return new ProductInfo(name, quantity, Math.max(0, unitPrice));
+        }
+        
+        return null;
+    }
+
+    /**
+     * 提取单个产品信息（当没有数组时）
+     */
+    private ProductInfo extractSingleProduct(JsonNode root) {
+        String name = getStringValue(root, "product", "product_name", "商品", "商品名");
+        int quantity = getIntValue(root, "quantity", "qty", "数量");
+        float unitPrice = getFloatValue(root, "unit_price", "price", "单价");
+        
+        if (!name.isEmpty() && quantity > 0) {
+            return new ProductInfo(name, quantity, Math.max(0, unitPrice));
+        }
+        
+        return null;
+    }
+
+    /**
+     * 从文本中提取商品信息 - 正则表达式方法
+     */
+    private ProductInfo extractProductFromText(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return null;
+        }
+        
+        // 大幅扩展商品名提取：涵盖更多常见商品
+        String[] productPatterns = {
+            // 饮品类
+            "(水|饮用水|矿泉水|纯净水|饮料|可乐|雪碧|果汁|茶|咖啡|奶茶|豆浆)",
+            
+            // 水果类
+            "(苹果|橙子|香蕉|梨子|葡萄|西瓜|草莓|芒果|桃子|樱桃|柠檬|橘子|柚子|猕猴桃|火龙果|榴莲)",
+            
+            // 主食类
+            "(大米|面粉|面条|馒头|包子|饺子|汤圆|米饭|面包|饼干|蛋糕|粥|粉条|河粉|方便面)",
+            
+            // 乳制品类
+            "(鸡蛋|牛奶|酸奶|奶酪|黄油|奶粉|豆奶|酸奶|乳制品)",
+            
+            // 肉类
+            "(鱼|肉|鸡|鸭|猪肉|牛肉|羊肉|火腿|香肠|腊肉|培根|鸡翅|鸡腿|排骨)",
+            
+            // 蔬菜类
+            "(青菜|白菜|萝卜|土豆|西红柿|黄瓜|茄子|豆角|辣椒|洋葱|蒜|姜|韭菜|菠菜|芹菜)",
+            
+            // 日用品类
+            "(纸巾|卫生纸|洗发水|沐浴露|牙膏|牙刷|毛巾|香皂|洗衣粉|洗洁精)",
+            
+            // 通用商品词
+            "([\\u4e00-\\u9fa5]{1,4}(?:商品|产品|货物|物品|用品))",  // XX商品、XX产品等
+            "([\\u4e00-\\u9fa5]{2,6})"  // 2-6个中文字符的通用商品名
+        };
+        
+        String productName = "";
+        for (String pattern : productPatterns) {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+            java.util.regex.Matcher m = p.matcher(text);
+            if (m.find()) {
+                String candidate = m.group(1);
+                // 添加更严格的商品名验证
+                if (isValidProductName(candidate)) {
+                    productName = candidate;
+                    break;
+                }
+            }
+        }
+        
+        if (productName.isEmpty()) {
+            return null;
+        }
+        
+        // 大幅优化数量提取：支持更多表达方式
+        int quantity = 0;
+        String[] quantityPatterns = {
+            // 基础数量模式
+            "(\\d+)\\s*个\\s*" + productName,               // 5个水
+            "(\\d+)\\s*瓶\\s*" + productName,               // 5瓶水
+            "(\\d+)\\s*件\\s*" + productName,               // 5件商品
+            "(\\d+)\\s*只\\s*" + productName,               // 5只鸡
+            "(\\d+)\\s*袋\\s*" + productName,               // 5袋大米
+            "(\\d+)\\s*箱\\s*" + productName,               // 5箱饮料
+            "(\\d+)\\s*斤\\s*" + productName,               // 5斤苹果
+            "(\\d+)\\s*公斤\\s*" + productName,             // 5公斤米
+            
+            // 🆕 新增：数字+单位+商品的模式
+            "([一二三四五六七八九十]|\\d+)\\s*瓶\\s*" + productName,     // 三瓶水
+            "([一二三四五六七八九十]|\\d+)\\s*个\\s*" + productName,      // 五个苹果
+            "([一二三四五六七八九十]|\\d+)\\s*件\\s*" + productName,      // 十件商品
+            "([一二三四五六七八九十]|\\d+)\\s*只\\s*" + productName,      // 两只鸡
+            "([一二三四五六七八九十]|\\d+)\\s*袋\\s*" + productName,      // 一袋米
+            "([一二三四五六七八九十]|\\d+)\\s*箱\\s*" + productName,      // 六箱饮料
+            
+            // 倒序模式：商品+数量
+            productName + "\\s*(\\d+)\\s*个",               // 水5个
+            productName + "\\s*(\\d+)\\s*瓶",               // 水5瓶
+            productName + "\\s*(\\d+)\\s*件",               // 商品5件
+            
+            // 灵活的中文表达
+            "(\\d+)\\s*" + productName,                     // 5水（简化表达）
+            productName + "\\s*(\\d+)",                     // 水5（简化表达）
+            "买\\s*(\\d+)\\s*" + productName,              // 买5个水
+            "要\\s*(\\d+)\\s*" + productName,              // 要5瓶水
+            "需要\\s*(\\d+)\\s*" + productName,            // 需要5件商品
+            
+            // 通用数量模式
+            "数量\\s*(\\d+)",                               // 数量5
+            "(\\d+)\\s*(?:个|瓶|件|只|袋|箱|斤|公斤)",      // 数字+单位
+        };
+        
+        for (String pattern : quantityPatterns) {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+            java.util.regex.Matcher m = p.matcher(text);
+            if (m.find()) {
+                try {
+                    String quantityStr = m.group(1);
+                    // 处理中文数字转换
+                    quantity = convertChineseNumber(quantityStr);
+                    if (quantity > 0) {
+                        break; // 找到有效数量就停止
+                    }
+                } catch (NumberFormatException e) {
+                    // 忽略解析错误，继续尝试下一个模式
+                }
+            }
+        }
+        
+        // 大幅优化单价提取：支持更多价格表达
+        float unitPrice = 0.0f;
+        String[] pricePatterns = {
+            // "一瓶X元"、"每个X元"模式
+            "一\\s*瓶\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一瓶3元
+            "一\\s*个\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一个5元
+            "一\\s*件\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一件10元
+            "一\\s*只\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一只20元
+            "一\\s*袋\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一袋30元
+            "一\\s*斤\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 一斤8元
+            
+            "每\\s*瓶\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每瓶3元
+            "每\\s*个\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每个5元
+            "每\\s*件\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每件10元
+            "每\\s*只\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每只20元
+            "每\\s*袋\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每袋30元
+            "每\\s*斤\\s*(\\d+(?:\\.\\d+)?)\\s*元",           // 每斤8元
+            
+            // 基础价格模式
+            "(\\d+(?:\\.\\d+)?)\\s*元\\s*一",                // 3元一瓶
+            "(\\d+(?:\\.\\d+)?)\\s*块\\s*一",                // 3块一个
+            "(\\d+(?:\\.\\d+)?)\\s*钱\\s*一",                // 3钱一件
+            
+            // 标准价格模式
+            "(\\d+(?:\\.\\d+)?)\\s*元",                      // 3元
+            "(\\d+(?:\\.\\d+)?)\\s*块",                      // 3块
+            "(\\d+(?:\\.\\d+)?)\\s*钱",                      // 3钱
+            "单价\\s*(\\d+(?:\\.\\d+)?)",                    // 单价3
+            "价格\\s*(\\d+(?:\\.\\d+)?)",                    // 价格3
+            
+            // 通用价格模式
+            "([0-9]+(?:\\.[0-9]+)?)\\s*(?:元|块|钱|￥|¥)",   // 支持￥符号
+            
+            // 增强的商品价格模式
+            productName + "\\s*单价\\s*(\\d+(?:\\.\\d+)?)",  // 水单价3
+            productName + "\\s*(\\d+(?:\\.\\d+)?)\\s*元",    // 水3元
+            "单价\\s*(\\d+(?:\\.\\d+)?)(?:/|每|每个|每瓶|每件)",  // 单价3/个
+            "价格\\s*(\\d+(?:\\.\\d+)?)(?:/|每|每个|每瓶|每件)",  // 价格3/个
+            "(?:售价|卖|卖价)\\s*(\\d+(?:\\.\\d+)?)",         // 售价3、卖3
+            
+            // 仅价格补充模式
+            "^\\s*单价\\s*(\\d+(?:\\.\\d+)?)",               // 单价3（仅价格信息）
+            "^\\s*(\\d+(?:\\.\\d+)?)\\s*元?/?(?:个|瓶|件|只|袋|箱|斤)",  // 3/个（仅价格信息）
+            "^\\s*每(?:个|瓶|件|只|袋|箱|斤)\\s*(\\d+(?:\\.\\d+)?)",     // 每个3（仅价格信息）
+        };
+        
+        for (String pattern : pricePatterns) {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+            java.util.regex.Matcher m = p.matcher(text);
+            if (m.find()) {
+                try {
+                    unitPrice = Float.parseFloat(m.group(1));
+                    if (unitPrice >= 0) {
+                        break; // 找到有效价格就停止
+                    }
+                } catch (NumberFormatException e) {
+                    // 忽略解析错误，继续尝试下一个模式
+                }
+            }
+        }
+        
+        // 如果至少有商品名和数量，就创建商品信息
+        if (!productName.isEmpty() && quantity > 0) {
+            System.out.println(String.format("🛒 成功提取商品信息: %s × %d @ ¥%.2f", productName, quantity, unitPrice));
+            return new ProductInfo(productName, quantity, unitPrice);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 验证商品名是否有效
+     */
+    private boolean isValidProductName(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return false;
+        }
+        
+        // 过滤明显不是商品的词汇
+        String[] invalidProducts = {
+            "创建", "订单", "查询", "删除", "买", "卖", "购买", "销售",
+            "客户", "供应商", "数量", "单价", "价格", "元", "块", "钱",
+            "个", "件", "只", "瓶", "袋", "箱", "斤", "公斤", "那里", "这里", "处",
+            // 数量+单位组合
+            "一瓶", "一个", "一件", "一只", "一袋", "一箱", "一斤", "三瓶", "五个", "十件"
+        };
+        
+        String lowerName = name.toLowerCase();
+        for (String invalid : invalidProducts) {
+            if (lowerName.equals(invalid) || lowerName.equals(invalid.toLowerCase())) {
+                return false;
+            }
+        }
+        
+        // 检查长度：商品名应该在合理范围内
+        if (name.length() < 1 || name.length() > 10) {
+            return false;
+        }
+        
+        // 检查是否只包含数字
+        if (name.matches("^\\d+$")) {
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 将中文数字转换为阿拉伯数字
+     */
+    private int convertChineseNumber(String chineseNumber) {
+        if (chineseNumber == null || chineseNumber.trim().isEmpty()) {
+            return 0;
+        }
+        
+        // 如果已经是阿拉伯数字，直接解析
+        try {
+            return Integer.parseInt(chineseNumber.trim());
+        } catch (NumberFormatException e) {
+            // 不是阿拉伯数字，继续处理中文数字
+        }
+        
+        // 中文数字映射
+        String chineseNum = chineseNumber.trim();
+        switch (chineseNum) {
+            case "一": return 1;
+            case "二": return 2;
+            case "三": return 3;
+            case "四": return 4;
+            case "五": return 5;
+            case "六": return 6;
+            case "七": return 7;
+            case "八": return 8;
+            case "九": return 9;
+            case "十": return 10;
+            case "十一": return 11;
+            case "十二": return 12;
+            case "十三": return 13;
+            case "十四": return 14;
+            case "十五": return 15;
+            case "十六": return 16;
+            case "十七": return 17;
+            case "十八": return 18;
+            case "十九": return 19;
+            case "二十": return 20;
+            default:
+                // 对于复杂的中文数字，返回0表示无法解析
+                return 0;
+        }
     }
 } 
