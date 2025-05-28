@@ -149,3 +149,5 @@ password = VALUES(password),
 updated_at = CURRENT_TIMESTAMP;
 
 -- 注意：密码为 'admin123'，使用BCrypt加密
+ALTER TABLE `users`
+  ADD COLUMN `avatar` VARCHAR(255) NULL COMMENT '头像 URL';

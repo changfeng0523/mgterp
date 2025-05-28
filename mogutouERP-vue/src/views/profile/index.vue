@@ -22,7 +22,8 @@
             </el-avatar>
             <el-upload
               class="avatar-uploader"
-              action="/api/user/avatar"
+              action="/api/auth/avatar"
+              name="avatar"
               :show-file-list="false"
               :on-success="handleAvatarSuccess"
               :before-upload="beforeAvatarUpload"
@@ -332,10 +333,12 @@ const updatePassword = async () => {
 // 头像上传成功处理
 const handleAvatarSuccess = (response) => {
   console.log('头像上传响应:', response)
-  if (response && response.code === 200 && response.data) {
-    userInfo.avatar = response.data.avatar
-    // 更新Pinia store中的头像
-    userStore.avatar = response.data.avatar
+  // 后端返回 { code:200, data:{ avatarUrl: "http://.../uploads/xxx.jpg" } }
+  if (response?.code === 200 && response.data?.avatarUrl) {
+    // 1) 立即更新页面上的头像
+    userInfo.avatar = response.data.avatarUrl
+    // 2) 如果你在 Pinia 中存了头像，也同步一下
+    userStore.avatar = response.data.avatarUrl
     ElMessage.success('头像上传成功')
   } else {
     ElMessage.error(response?.message || '头像上传失败')

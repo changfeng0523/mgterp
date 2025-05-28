@@ -4,13 +4,20 @@ import com.mogutou.erp.common.Result;
 import com.mogutou.erp.config.JwtConfig;
 import com.mogutou.erp.entity.User;
 import com.mogutou.erp.service.UserService;
+import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -21,6 +28,12 @@ public class AuthController {
     
     @Autowired
     private JwtConfig jwtConfig;
+
+    @Autowired
+    private ServletContext servletContext;
+
+    @Value("${file.upload-dir}")
+    private String uploadDir; // = "uploads"
     
     @PostMapping("/login")
     public Result<Map<String, Object>> login(@RequestBody Map<String, String> loginRequest) {
@@ -140,7 +153,55 @@ public class AuthController {
             return Result.error(500, "更新用户信息失败: " + e.getMessage());
         }
     }
-    
+
+    @PostMapping("/avatar")
+    public Result<Map<String, String>> uploadAvatar(HttpServletRequest request,
+                                                    @RequestParam("avatar") MultipartFile avatar) {
+        // 1) 基本校验
+        if (avatar == null || avatar.isEmpty()) {
+            return Result.error(400, "未选择头像文件");
+        }
+
+        // 2) 计算磁盘保存路径
+        String realPath = servletContext.getRealPath("/") + File.separator + uploadDir;
+        File dir = new File(realPath);
+        if (!dir.exists() && !dir.mkdirs()) {
+            return Result.error(500, "创建上传目录失败");
+        }
+
+        // 3) 生成唯一文件名并保存
+        String original = avatar.getOriginalFilename();
+        String ext = original != null && original.contains(".")
+                ? original.substring(original.lastIndexOf('.'))
+                : "";
+        String filename = UUID.randomUUID().toString() + ext;
+        File dest = new File(dir, filename);
+        try {
+            avatar.transferTo(dest);
+        } catch (IOException e) {
+            return Result.error(500, "保存文件失败");
+        }
+
+        // 4) 构造可被前端访问的 URL
+        String avatarUrl = ServletUriComponentsBuilder
+                .fromCurrentContextPath()
+                .path("/" + uploadDir + "/")
+                .path(filename)
+                .toUriString();
+
+        // 5) 持久化到数据库
+        String username = (String) request.getAttribute("username");
+        userService.findByUsername(username).ifPresent(user -> {
+            userService.updateAvatar(user, avatarUrl);
+        });
+
+        // 6) 给前端返回新 URL
+        Map<String, String> data = new HashMap<>();
+        data.put("avatarUrl", avatarUrl);
+        return Result.success(data);
+    }
+
+
     @GetMapping("/logout")
     public Result<Void> logout() {
         // 在实际应用中，可能需要处理令牌失效等逻辑

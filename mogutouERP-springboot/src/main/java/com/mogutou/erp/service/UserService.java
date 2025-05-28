@@ -96,4 +96,9 @@ public class UserService {
     public boolean isTelExists(String tel) {
         return userRepository.existsByTel(tel);
     }
+
+    public void updateAvatar(User user, String avatarUrl) {
+        user.setAvatar(avatarUrl);
+        userRepository.save(user);
+    }
 }

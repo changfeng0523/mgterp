@@ -23,6 +23,7 @@ public class User {
     private String email;
     
     // 添加avatar字段
+    @Column(name = "avatar", length = 255)
     private String avatar;
     
     @Column(columnDefinition = "VARCHAR(20) DEFAULT 'user'")
