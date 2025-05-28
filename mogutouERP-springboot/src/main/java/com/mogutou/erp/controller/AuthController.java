@@ -82,7 +82,7 @@ public class AuthController {
                 Map<String, Object> userInfo = new HashMap<>();
                 userInfo.put("name", user.getUsername());
                 userInfo.put("roles", new String[]{user.getRole() != null ? user.getRole() : "USER"});
-                userInfo.put("avatar", "https://wpimg.wallstcn.com/f778738c-e4f8-4870-b634-56703b4acafe.gif");
+                userInfo.put("avatar", user.getAvatar() != null ? user.getAvatar() : "https://wpimg.wallstcn.com/f778738c-e4f8-4870-b634-56703b4acafe.gif");
                 userInfo.put("tel", user.getTel() != null ? user.getTel() : "");
                 userInfo.put("email", user.getEmail() != null ? user.getEmail() : "");
                 
@@ -97,6 +97,47 @@ public class AuthController {
             System.err.println("❌ 获取用户信息时发生异常: " + e.getMessage());
             e.printStackTrace();
             return Result.error(500, "服务器内部错误：" + e.getMessage());
+        }
+    }
+    
+    @PutMapping("/user")
+    public Result<?> updateUserInfo(@RequestBody Map<String, String> userInfoRequest, HttpServletRequest request) {
+        try {
+            // 从请求属性中获取用户名（由JWT拦截器设置）
+            String username = (String) request.getAttribute("username");
+            Long userId = (Long) request.getAttribute("userId");
+            
+            if (username == null || username.trim().isEmpty()) {
+                return Result.error(401, "未授权访问：缺少用户信息");
+            }
+            
+            // 根据用户名查找用户
+            Optional<User> userOpt = userService.findByUsername(username);
+            
+            if (!userOpt.isPresent()) {
+                return Result.error(404, "用户不存在");
+            }
+            
+            User user = userOpt.get();
+            
+            // 更新用户信息
+            String email = userInfoRequest.get("email");
+            String tel = userInfoRequest.get("tel");
+            
+            if (email != null) {
+                user.setEmail(email);
+            }
+            
+            if (tel != null) {
+                user.setTel(tel);
+            }
+            
+            // 保存更新后的用户信息
+            userService.updateUser(user);
+            
+            return Result.success("用户信息更新成功");
+        } catch (Exception e) {
+            return Result.error(500, "更新用户信息失败: " + e.getMessage());
         }
     }
     

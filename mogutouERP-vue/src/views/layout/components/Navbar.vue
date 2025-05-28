@@ -21,9 +21,9 @@
       
       <el-dropdown class="avatar-container right-menu-item hover-effect" trigger="click">
         <div class="avatar-wrapper">
-          <img src="https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png" class="user-avatar" />
-          <span class="user-name">管理员</span>
-          <i class="el-icon-caret-bottom" />
+          <img :src="avatar" class="user-avatar">
+          <span class="user-name">{{ name }}</span>
+          <el-icon class="el-icon-caret-bottom"><CaretBottom /></el-icon>
         </div>
         <template #dropdown>
           <el-dropdown-menu class="user-dropdown">
@@ -62,10 +62,15 @@ import { useUserStore } from '@/store/modules/user'
 import { useAppStore } from '@/stores/app'
 import { computed } from 'vue'
 import Breadcrumb from './Breadcrumb.vue'
+import { CaretBottom } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const userStore = useUserStore()
 const appStore = useAppStore()
+
+// 用户信息
+const name = computed(() => userStore.name || '用户')
+const avatar = computed(() => userStore.avatar || 'https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png')
 
 // 侧边栏状态
 const sidebarOpen = computed(() => appStore.sidebar.opened)

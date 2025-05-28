@@ -52,6 +52,15 @@ public class UserService {
     }
     
     /**
+     * 更新用户信息
+     * @param user 用户对象
+     * @return 更新后的用户对象
+     */
+    public User updateUser(User user) {
+        return userRepository.save(user);
+    }
+    
+    /**
      * 更新用户登录时间
      * @param user 用户对象
      */

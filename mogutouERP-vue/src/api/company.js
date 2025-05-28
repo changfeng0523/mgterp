@@ -3,7 +3,7 @@ import request from '@/utils/request'
 // 员工相关API
 export function getStaff(companyId, params) {
   return request({
-    url: companyId ? `/staff/company/${companyId}` : '/staff',
+    url: companyId ? `/api/staff/company/${companyId}` : '/api/staff',
     method: 'get',
     params: params
   })
@@ -11,7 +11,7 @@ export function getStaff(companyId, params) {
 
 export function createStaff(data) {
   return request({
-    url: '/staff',
+    url: '/api/staff',
     method: 'post',
     data: data
   })
@@ -19,7 +19,7 @@ export function createStaff(data) {
 
 export function updateStaff(id, data) {
   return request({
-    url: `/staff/${id}`,
+    url: `/api/staff/${id}`,
     method: 'put',
     data: data
   })
@@ -27,14 +27,14 @@ export function updateStaff(id, data) {
 
 export function deleteStaff(id) {
   return request({
-    url: `/staff/${id}`,
+    url: `/api/staff/${id}`,
     method: 'delete'
   })
 }
 
 export function updatePassword(data) {
   return request({
-    url: '/staff/password',
+    url: '/api/staff/password',
     method: 'put',
     data: data
   })

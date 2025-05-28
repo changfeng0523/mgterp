@@ -22,6 +22,9 @@ public class User {
     
     private String email;
     
+    // 添加avatar字段
+    private String avatar;
+    
     @Column(columnDefinition = "VARCHAR(20) DEFAULT 'user'")
     private String role;
     
@@ -88,6 +91,15 @@ public class User {
     
     public void setEmail(String email) {
         this.email = email;
+    }
+    
+    // 添加avatar的getter和setter
+    public String getAvatar() {
+        return avatar;
+    }
+    
+    public void setAvatar(String avatar) {
+        this.avatar = avatar;
     }
     
     public String getRole() {

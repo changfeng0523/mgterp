@@ -3,8 +3,12 @@ package com.mogutou.erp.controller;
 import com.mogutou.erp.common.Result;
 import com.mogutou.erp.entity.Company;
 import com.mogutou.erp.entity.Staff;
+import com.mogutou.erp.entity.User;
 import com.mogutou.erp.service.CompanyService;
+import com.mogutou.erp.service.PasswordService;
 import com.mogutou.erp.service.StaffService;
+import com.mogutou.erp.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -16,7 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
-@RequestMapping("/staff")
+@RequestMapping("/api/staff")
 public class StaffController {
 
     @Autowired
@@ -24,6 +28,12 @@ public class StaffController {
     
     @Autowired
     private CompanyService companyService;
+    
+    @Autowired
+    private UserService userService;
+    
+    @Autowired
+    private PasswordService passwordService;
 
     @GetMapping
     public Result<?> getStaffList(
@@ -108,6 +118,49 @@ public class StaffController {
             return Result.success("员工删除成功");
         } catch (Exception e) {
             return Result.error("删除员工失败: " + e.getMessage());
+        }
+    }
+    
+    @PutMapping("/password")
+    public Result<?> updatePassword(@RequestBody Map<String, String> passwordRequest, HttpServletRequest request) {
+        try {
+            // 从请求属性中获取用户名（由JWT拦截器设置）
+            String username = (String) request.getAttribute("username");
+            Long userId = (Long) request.getAttribute("userId");
+            
+            if (username == null || username.trim().isEmpty()) {
+                return Result.error(401, "未授权访问：缺少用户信息");
+            }
+            
+            // 获取密码信息
+            String oldPassword = passwordRequest.get("oldPassword");
+            String newPassword = passwordRequest.get("newPassword");
+            
+            if (oldPassword == null || newPassword == null) {
+                return Result.error(400, "旧密码和新密码不能为空");
+            }
+            
+            // 根据用户名查找用户
+            Optional<User> userOpt = userService.findByUsername(username);
+            
+            if (!userOpt.isPresent()) {
+                return Result.error(404, "用户不存在");
+            }
+            
+            User user = userOpt.get();
+            
+            // 验证旧密码
+            if (!userService.verifyPassword(oldPassword, user.getPassword())) {
+                return Result.error(400, "旧密码不正确");
+            }
+            
+            // 更新密码
+            user.setPassword(passwordService.encodePassword(newPassword));
+            userService.updateUser(user);
+            
+            return Result.success("密码更新成功");
+        } catch (Exception e) {
+            return Result.error(500, "更新密码失败: " + e.getMessage());
         }
     }
 }

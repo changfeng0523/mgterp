@@ -20,7 +20,16 @@
             <el-avatar :size="100" :src="userInfo.avatar">
               <el-icon><User /></el-icon>
             </el-avatar>
-            <el-button type="primary" size="small" class="mt-2">更换头像</el-button>
+            <el-upload
+              class="avatar-uploader"
+              action="/api/user/avatar"
+              :show-file-list="false"
+              :on-success="handleAvatarSuccess"
+              :before-upload="beforeAvatarUpload"
+              :on-error="handleAvatarError"
+              :headers="uploadHeaders">
+              <el-button type="primary" size="small" class="mt-2">更换头像</el-button>
+            </el-upload>
           </div>
           
           <div class="info-container">
@@ -81,12 +90,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+// 在script setup部分添加
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading, User } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
 import { getInfo } from '@/api/user'
 import { getToken } from '@/utils/auth'
+import request from '@/utils/request'
 
 const userStore = useUserStore()
 
@@ -231,16 +242,24 @@ const updateProfile = async () => {
   try {
     updating.value = true
     
-    // 这里需要调用API更新用户信息
-    // const response = await updateUserInfo(userInfo)
+    // 调用API更新用户信息
+    const response = await request({
+      url: '/api/auth/user',
+      method: 'put',
+      data: {
+        email: userInfo.email,
+        tel: userInfo.tel
+      }
+    })
     
-    // 模拟API调用
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    ElMessage.success('个人信息更新成功')
+    if (response && response.code === 200) {
+      ElMessage.success('个人信息更新成功')
+    } else {
+      ElMessage.error(response?.message || '更新个人信息失败')
+    }
   } catch (error) {
     console.error('更新个人信息失败:', error)
-    ElMessage.error('更新个人信息失败')
+    ElMessage.error('更新个人信息失败: ' + (error.message || '未知错误'))
   } finally {
     updating.value = false
   }
@@ -276,19 +295,32 @@ const updatePassword = async () => {
           }
         )
         
-        // 这里需要调用API更新密码
-        // const response = await updateUserPassword(passwordForm)
+        // 调用API更新密码
+        const response = await request({
+          url: '/api/staff/password',
+          method: 'put',
+          data: {
+            oldPassword: passwordForm.oldPassword,
+            newPassword: passwordForm.newPassword
+          }
+        })
         
-        // 模拟API调用
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        
-        ElMessage.success('密码修改成功，请重新登录')
-        resetPasswordForm()
+        if (response && response.code === 200) {
+          ElMessage.success('密码修改成功，请重新登录')
+          resetPasswordForm()
+          
+          // 退出登录，重定向到登录页
+          setTimeout(() => {
+            userStore.logout()
+          }, 1500)
+        } else {
+          ElMessage.error(response?.message || '密码修改失败')
+        }
         
       } catch (error) {
         if (error !== 'cancel') {
           console.error('密码修改失败:', error)
-          ElMessage.error('密码修改失败')
+          ElMessage.error('密码修改失败: ' + (error.message || '未知错误'))
         }
       } finally {
         updatingPassword.value = false
@@ -296,6 +328,42 @@ const updatePassword = async () => {
     }
   })
 }
+
+// 头像上传成功处理
+const handleAvatarSuccess = (response) => {
+  console.log('头像上传响应:', response)
+  if (response && response.code === 200 && response.data) {
+    userInfo.avatar = response.data.avatar
+    // 更新Pinia store中的头像
+    userStore.avatar = response.data.avatar
+    ElMessage.success('头像上传成功')
+  } else {
+    ElMessage.error(response?.message || '头像上传失败')
+  }
+}
+
+// 头像上传前的验证
+const beforeAvatarUpload = (file) => {
+  const isJPG = file.type === 'image/jpeg'
+  const isPNG = file.type === 'image/png'
+  const isLt2M = file.size / 1024 / 1024 < 2
+
+  if (!isJPG && !isPNG) {
+    ElMessage.error('头像只能是JPG或PNG格式!')
+    return false
+  }
+  if (!isLt2M) {
+    ElMessage.error('头像大小不能超过2MB!')
+    return false
+  }
+  return true
+}
+// 添加上传请求头
+const uploadHeaders = computed(() => {
+  return {
+    Authorization: getToken() || ''
+  }
+})
 </script>
 
 <style scoped>
@@ -352,3 +420,9 @@ const updatePassword = async () => {
   }
 }
 </style>
+
+// 在script setup部分添加
+const handleAvatarError = (err, file, fileList) => {
+  console.error('头像上传错误:', err)
+  ElMessage.error('头像上传失败: ' + (err.message || '未知错误'))
+}

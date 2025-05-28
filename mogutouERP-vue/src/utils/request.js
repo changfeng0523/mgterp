@@ -15,12 +15,15 @@ service.interceptors.request.use(
     // 优先使用缓存的token，减少store访问
     const token = getToken()
     if (token) {
+      // getToken()已经添加了Bearer前缀，直接使用
       config.headers['Authorization'] = token
     } else {
       // 只在没有缓存token时才访问store
       const userStore = useUserStore()
       if (userStore.token) {
-        config.headers['Authorization'] = userStore.token
+        // 确保store中的token也有Bearer前缀
+        const storeToken = userStore.token
+        config.headers['Authorization'] = storeToken.startsWith('Bearer ') ? storeToken : `Bearer ${storeToken}`
       }
     }
     
