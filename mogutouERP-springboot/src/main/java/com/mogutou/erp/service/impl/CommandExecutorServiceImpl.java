@@ -404,6 +404,9 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             order.setAmount(totalAmount);
             Order savedOrder = orderService.createOrder(order, goodsList);
 
+            // 🆕 移除自动确认，让用户手动控制确认过程
+            // 订单创建成功，但需要用户手动确认才会更新库存和财务记录
+            
             // 生成简洁智能回复
             String orderTypeDesc = order.getOrderType().equals("PURCHASE") ? "采购" : "销售";
             String partnerLabel = order.getOrderType().equals("PURCHASE") ? "供应商" : "客户";
@@ -425,7 +428,9 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
                 }
                 result.append(")");
             }
-            result.append("\n\n💡 可以说'查询订单").append(savedOrder.getOrderNo()).append("'查看详情");
+            result.append("\n\n⚠️ 订单状态：待确认 (PENDING)");
+            result.append("\n💡 需要手动确认订单才会更新库存和财务记录");
+            result.append("\n💡 可以说'查询订单").append(savedOrder.getOrderNo()).append("'查看详情");
             
             // 🧠 学习客户偏好（在订单成功创建后）
             learnCustomerPreference(order.getCustomerName(), context.getProductList(), order.getOrderType());
@@ -1521,7 +1526,7 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
                 
                 // 🆕 明确标记这是分析结果，而非确认流程
                 StringBuilder result = new StringBuilder();
-                result.append("📊 订单分析（不需确认）\n\n");
+                result.append("📊 订单分析\n\n");
                 
                 // 尝试快速AI分析
                 String aiAnalysis = deepSeekAIService.analyzeOrderData(analysisData.toString());
@@ -1845,19 +1850,40 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
      * 智能提取订单类型 - 增强版
      */
     private String smartExtractOrderType(JsonNode root) {
-        // 1. 尝试从JSON字段中提取
+        // 1. 先进行本地强制检查 - 🆕 新增优先检查
+        if (root.has("original_input")) {
+            String input = root.get("original_input").asText().toLowerCase();
+            String localDetection = detectOrderTypeFromText(input);
+            if (localDetection.equals("PURCHASE")) {
+                System.out.println("🔴 本地强制纠正：检测到采购模式，忽略AI结果: " + input);
+                return "PURCHASE";
+            }
+        }
+        
+        // 2. 尝试从JSON字段中提取（但会被上面的本地检查覆盖）
         String[] typeFields = {"order_type", "type", "orderType", "order_type"};
         for (String field : typeFields) {
             if (root.has(field)) {
                 String type = root.get(field).asText().toUpperCase();
                 if (type.equals("SALE") || type.equals("PURCHASE")) {
                     System.out.println("📦 从字段提取订单类型: " + type);
+                    
+                    // 🆕 双重验证：如果AI说是销售但本地检测是采购，强制纠正
+                    if (type.equals("SALE") && root.has("original_input")) {
+                        String input = root.get("original_input").asText().toLowerCase();
+                        String localType = detectOrderTypeFromText(input);
+                        if (localType.equals("PURCHASE")) {
+                            System.out.println("🔴 强制纠正AI错误：" + input + " 应该是采购订单，不是销售订单！");
+                            return "PURCHASE";
+                        }
+                    }
+                    
                     return type;
                 }
             }
         }
         
-        // 2. 从原始输入中基于关键词识别
+        // 3. 从原始输入中基于关键词识别
         if (root.has("original_input")) {
             String input = root.get("original_input").asText().toLowerCase();
             String detectedType = detectOrderTypeFromText(input);
@@ -1867,7 +1893,7 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             }
         }
         
-        // 3. 尝试从其他字段推断
+        // 4. 尝试从其他字段推断
         String allText = root.toString().toLowerCase();
         String inferredType = detectOrderTypeFromText(allText);
         if (!inferredType.isEmpty()) {
@@ -1875,7 +1901,7 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             return inferredType;
         }
         
-        // 4. 默认为销售订单
+        // 5. 默认为销售订单
         System.out.println("📦 使用默认订单类型: SALE");
         return "SALE";
     }
@@ -1888,15 +1914,32 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
             return "";
         }
         
-        // 采购关键词 - 优先级更高，因为销售是默认
+        // 🚨 采购关键词 - 优先级更高，因为销售是默认
+        // 特别注意"从XX买"这种常见表达
         String[] purchaseKeywords = {
             "采购", "进货", "购买", "进料", "补货", "订购", "进仓", "入库",
             "从供应商", "向厂家", "向供应商", "从厂家", "供应商", "厂家", 
             "批发", "进购", "采买", "购进", "收货", "进材料", "买材料"
         };
         
+        // 🆕 特殊正则模式检查 - 处理"从XX买"这种表达
+        String[] purchasePatterns = {
+            "从.*买", "从.*购买", "从.*采购", "从.*进货", "从.*那里", "从.*这里", "从.*处",
+            "向.*买", "向.*购买", "向.*采购", "向.*进货"
+        };
+        
+        // 先检查正则模式
+        for (String pattern : purchasePatterns) {
+            if (text.matches(".*" + pattern + ".*")) {
+                System.out.println("🛒 检测到采购模式: " + pattern + " 在文本: " + text);
+                return "PURCHASE";
+            }
+        }
+        
+        // 再检查普通关键词
         for (String keyword : purchaseKeywords) {
             if (text.contains(keyword)) {
+                System.out.println("🛒 检测到采购关键词: " + keyword);
                 return "PURCHASE";
             }
         }
@@ -1910,6 +1953,7 @@ public class CommandExecutorServiceImpl implements CommandExecutorService {
         
         for (String keyword : saleKeywords) {
             if (text.contains(keyword)) {
+                System.out.println("💰 检测到销售关键词: " + keyword);
                 return "SALE";
             }
         }

@@ -149,7 +149,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useFinanceStore } from '@/stores/finance'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
-import { sendNLIRequest, sendNLIRequestWithRetry } from '@/api/nli'
+import { sendNLIRequest, sendNLIRequestWithRetry, getBusinessInsights } from '@/api/nli'
 
 const financeStore = useFinanceStore()
 
@@ -195,17 +195,22 @@ const fetchAIInsightsForFinance = async () => {
     ? `${new Date(dateRange.value[0]).toLocaleDateString()} 到 ${new Date(dateRange.value[1]).toLocaleDateString()}` 
     : '指定范围内';
   
-  const dataSummary = tableData.value.slice(0, 5).map(d => 
-    `日期: ${d.date}, 收入: ${formatCurrency(d.income)}, 支出: ${formatCurrency(d.expense)}, 利润: ${formatCurrency(d.profit)}`
-  ).join('; ');
-
-  const query = `请基于以下 ${dateRangeText} 的财务数据摘要 (示例数据: ${dataSummary}) 以及整体财务图表趋势，分析当前的业务表现，指出主要的财务健康指标，识别潜在的风险点和增长机会，并提供3-5条具体的业务改进建议。请让建议具有可操作性。`;
-
+  // 创建更精简的财务数据摘要
+  const summaryData = createFinanceSummary(tableData.value);
+  
+  // 组装查询
+  const query = `请基于${dateRangeText}的财务数据分析业务表现，提供具体可操作的改进建议。`;
+  
   try {
-    // 使用带重试机制的API调用
-    const response = await sendNLIRequestWithRetry(query); 
+    // 使用专门的业务洞察API而不是通用NLI处理
+    const response = await getBusinessInsights(
+      query,
+      'FINANCE', // 指定分析类型
+      summaryData // 提供结构化的数据上下文
+    ); 
+    
     if (response && response.reply) { 
-      aiInsights.value = response.reply; 
+      aiInsights.value = response.reply.replace('📊 ', ''); // 移除前缀，因为API已经添加了
     } else {
       aiInsights.value = '未能获取AI洞察，请稍后再试。';
     }
@@ -214,15 +219,84 @@ const fetchAIInsightsForFinance = async () => {
     
     // 更详细的错误处理
     if (error.code === 'ECONNABORTED') {
-      aiInsights.value = '⏰ AI分析请求超时，财务数据较复杂需要更多时间处理。\n\n建议：\n1. 减少分析的日期范围\n2. 稍后重新尝试\n3. 检查网络连接状态';
+      aiInsights.value = '⏰ AI分析请求超时，财务数据较复杂需要更多时间处理。\n\n建议：\n1. 减少分析的日期范围\n2. 稍后重新尝试\n3. 可以先查看基础数据图表';
     } else if (error.response?.status === 500) {
-      aiInsights.value = '🔧 AI服务暂时不可用，请稍后重试。\n\n如果问题持续存在，请联系技术支持。';
+      aiInsights.value = '🔧 AI服务暂时不可用，请稍后重试。';
     } else {
-      aiInsights.value = `❌ 获取AI洞察失败: ${error.message || '未知错误'}\n\n请检查网络连接或稍后重试。`;
+      aiInsights.value = `❌ 获取AI洞察失败: ${error.message || '未知错误'}`;
     }
   } finally {
     aiLoading.value = false;
   }
+};
+
+// 创建财务摘要数据，避免传递过多原始数据
+const createFinanceSummary = (data) => {
+  // 如果数据量太大，保留最近的部分数据点
+  const analyzeData = data.length > 30 ? data.slice(-30) : data;
+  
+  // 计算关键指标
+  const totalIncome = analyzeData.reduce((sum, item) => sum + (item.income || 0), 0);
+  const totalExpense = analyzeData.reduce((sum, item) => sum + (item.expense || 0), 0);
+  const totalProfit = totalIncome - totalExpense;
+  
+  // 计算平均值
+  const avgIncome = totalIncome / analyzeData.length;
+  const avgExpense = totalExpense / analyzeData.length;
+  const avgProfit = totalProfit / analyzeData.length;
+  
+  // 按类型统计
+  const typeCount = {};
+  analyzeData.forEach(item => {
+    typeCount[item.type] = (typeCount[item.type] || 0) + 1;
+  });
+  
+  // 识别趋势 (通过计算近期数据斜率)
+  const recentData = analyzeData.slice(-7); // 最近7个数据点
+  const incomeTrend = calculateTrend(recentData.map(x => x.income || 0));
+  const expenseTrend = calculateTrend(recentData.map(x => x.expense || 0));
+  const profitTrend = calculateTrend(recentData.map(x => x.profit || 0));
+  
+  // 组装结构化摘要
+  return `
+财务数据摘要 (${dateRange.value && dateRange.value.length === 2 ? dateRangeText : '当前期间'}):
+- 数据点数量: ${analyzeData.length}
+- 总收入: ${formatCurrency(totalIncome)} | 平均: ${formatCurrency(avgIncome)}
+- 总支出: ${formatCurrency(totalExpense)} | 平均: ${formatCurrency(avgExpense)}
+- 总利润: ${formatCurrency(totalProfit)} | 平均: ${formatCurrency(avgProfit)}
+- 主要类型: ${Object.keys(typeCount).map(k => `${k}(${typeCount[k]})`).join(', ')}
+- 收入趋势: ${getTrendDescription(incomeTrend)}
+- 支出趋势: ${getTrendDescription(expenseTrend)}
+- 利润趋势: ${getTrendDescription(profitTrend)}
+- 示例数据: ${analyzeData.slice(0, 3).map(d => 
+    `日期: ${d.date}, 收入: ${formatCurrency(d.income)}, 支出: ${formatCurrency(d.expense)}`
+  ).join('; ')}`;
+};
+
+// 计算数据趋势 (简单线性回归)
+const calculateTrend = (data) => {
+  if (!data || data.length < 3) return 0;
+  
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  for (let i = 0; i < data.length; i++) {
+    sumX += i;
+    sumY += data[i];
+    sumXY += i * data[i];
+    sumX2 += i * i;
+  }
+  
+  const n = data.length;
+  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+  return slope;
+};
+
+// 获取趋势描述
+const getTrendDescription = (slope) => {
+  if (slope > 0.1) return "明显上升";
+  if (slope > 0) return "略微上升";
+  if (slope < -0.1) return "明显下降";
+  if (slope < 0) return "略微下降";
+  return "保持稳定";
 };
 
 const fetchData = async () => {

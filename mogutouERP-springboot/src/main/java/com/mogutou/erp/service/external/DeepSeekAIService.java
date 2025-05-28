@@ -60,9 +60,228 @@ public class DeepSeekAIService {
      * 业务分析模式 - 深度数据分析
      */
     public String analyzeData(String data, String analysisType) throws IOException {
+        // 1. 对输入数据进行预处理和优化
+        String processedData = preprocessAnalysisData(data, analysisType);
+        
+        // 2. 选择合适的系统提示词和超时设置
         String systemPrompt = buildAnalysisPrompt(analysisType);
-        int timeout = "ORDER".equals(analysisType) ? ORDER_ANALYSIS_TIMEOUT : ANALYSIS_TIMEOUT;
-        return callAIWithRetry(data, systemPrompt, timeout, "ANALYSIS");
+        int timeout = getAnalysisTimeout(analysisType);
+        
+        // 3. 使用更高效的分析调用
+        return callAnalysisWithOptimizedRetry(processedData, systemPrompt, timeout, analysisType);
+    }
+
+    /**
+     * 预处理分析数据
+     * 优化数据结构和大小，提高AI处理效率
+     */
+    private String preprocessAnalysisData(String data, String analysisType) {
+        if (data == null || data.isEmpty()) {
+            return "无数据可分析";
+        }
+        
+        // 如果数据过长，进行智能裁剪
+        if (data.length() > 6000) {
+            System.out.println("⚠️ 分析数据过长，进行智能裁剪: " + data.length() + " -> 6000字符");
+            
+            // 分析类型特定的裁剪策略
+            if ("FINANCE".equals(analysisType) || "ORDER".equals(analysisType)) {
+                // 保留摘要部分和关键指标
+                int summaryEnd = data.indexOf("\n-");
+                if (summaryEnd > 0 && summaryEnd < 500) {
+                    // 提取摘要部分
+                    String summary = data.substring(0, summaryEnd);
+                    
+                    // 提取关键指标 (通常是以"-"或"•"开头的行)
+                    StringBuilder keyMetrics = new StringBuilder();
+                    String[] lines = data.split("\n");
+                    int metricsCount = 0;
+                    
+                    for (String line : lines) {
+                        if ((line.trim().startsWith("-") || line.trim().startsWith("•")) 
+                             && metricsCount < 20) {  // 最多保留20个关键指标
+                            keyMetrics.append(line).append("\n");
+                            metricsCount++;
+                        }
+                    }
+                    
+                    return summary + "\n" + keyMetrics.toString() + 
+                           "\n(数据已优化处理以提高分析效率)";
+                }
+            }
+            
+            // 默认裁剪策略：保留开头、中间关键部分和结尾
+            return data.substring(0, 2500) + 
+                   "\n...(数据已优化)...\n" + 
+                   data.substring(data.length() - 2500);
+        }
+        
+        return data;
+    }
+    
+    /**
+     * 获取根据分析类型动态确定的超时时间
+     */
+    private int getAnalysisTimeout(String analysisType) {
+        return switch (analysisType.toUpperCase()) {
+            case "ORDER" -> ORDER_ANALYSIS_TIMEOUT;
+            case "FINANCE" -> 75; // 财务分析较复杂，给75秒
+            case "INVENTORY" -> 60; // 库存分析，标准60秒
+            case "SALES" -> 60; // 销售分析，标准60秒
+            default -> ANALYSIS_TIMEOUT; // 默认分析超时
+        };
+    }
+    
+    /**
+     * 针对分析场景优化的重试机制
+     */
+    private String callAnalysisWithOptimizedRetry(String input, String systemPrompt, 
+                                                int timeoutSeconds, String analysisType) throws IOException {
+        int maxRetries = 3;
+        long baseDelay = 1500; // 增加基础延迟
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                System.out.println(String.format("🔍 分析调用[%s] - 尝试%d/%d", analysisType, attempt, maxRetries));
+                
+                // 第一次尝试正常调用，第二次尝试简化提示词，第三次尝试降低生成长度
+                if (attempt == 1) {
+                    return callDeepSeekAPI(input, systemPrompt, timeoutSeconds);
+                } else if (attempt == 2) {
+                    // 简化提示词，减少对格式的要求
+                    String simplifiedPrompt = simplifyAnalysisPrompt(systemPrompt);
+                    return callDeepSeekAPI(input, simplifiedPrompt, timeoutSeconds + 15); // 增加超时
+                } else {
+                    // 最后一次尝试：降低回复复杂度，增加超时时间
+                    String emergencyPrompt = "你是数据分析师。分析以下数据并提供简短清晰的见解，无需格式化：\n";
+                    // 进一步压缩输入数据
+                    String reducedInput = reduceInputSize(input);
+                    return callDeepSeekAPI(reducedInput, emergencyPrompt, timeoutSeconds + 30); // 显著增加超时
+                }
+            } catch (IOException e) {
+                System.err.println(String.format("❌ 分析失败[%s] - 尝试%d: %s", analysisType, attempt, e.getMessage()));
+                
+                if (attempt == maxRetries) {
+                    // 返回基础分析结果而不是抛出异常
+                    return generateBackupAnalysis(input, analysisType);
+                }
+                
+                // 指数退避延迟
+                try {
+                    long delay = baseDelay * (1L << (attempt - 1)); // 1.5s, 3s, 6s
+                    System.out.println(String.format("⏳ 等待%dms后重试...", delay));
+                    Thread.sleep(delay);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        
+        // 最后的备用方案
+        return "数据分析过程中遇到技术问题，请查看基础统计数据作为参考。";
+    }
+    
+    /**
+     * 简化分析提示词，降低格式要求
+     */
+    private String simplifyAnalysisPrompt(String originalPrompt) {
+        // 保留核心指示，去除复杂的格式要求
+        return "你是数据分析师。基于以下数据提供业务洞察和建议。\n" +
+              "要点：\n" +
+              "• 简明扼要分析关键趋势\n" +
+              "• 提出2-3条具体可行的建议\n" +
+              "• 回复控制在300-400字内";
+    }
+    
+    /**
+     * 进一步减少输入数据大小
+     */
+    private String reduceInputSize(String input) {
+        if (input.length() <= 1500) {
+            return input;
+        }
+        
+        // 只保留前900和后600个字符
+        return input.substring(0, 900) + "\n...[数据已大幅简化]...\n" + 
+               input.substring(input.length() - 600);
+    }
+    
+    /**
+     * 生成备用分析结果
+     * 当API调用全部失败时，提供基本的数值分析
+     */
+    private String generateBackupAnalysis(String input, String analysisType) {
+        try {
+            // 提取可能的数字数据
+            List<Double> numbers = extractNumbers(input);
+            
+            StringBuilder result = new StringBuilder();
+            result.append("🔢 基础数据统计 (AI深度分析暂不可用)\n\n");
+            
+            if (!numbers.isEmpty()) {
+                // 计算基础统计数据
+                double sum = 0, max = numbers.get(0), min = numbers.get(0);
+                for (double num : numbers) {
+                    sum += num;
+                    max = Math.max(max, num);
+                    min = Math.min(min, num);
+                }
+                double avg = sum / numbers.size();
+                
+                result.append("• 数据点数量: ").append(numbers.size()).append("\n");
+                result.append("• 总和: ").append(String.format("%.2f", sum)).append("\n");
+                result.append("• 平均值: ").append(String.format("%.2f", avg)).append("\n");
+                result.append("• 最大值: ").append(String.format("%.2f", max)).append("\n");
+                result.append("• 最小值: ").append(String.format("%.2f", min)).append("\n\n");
+                
+                // 简单趋势判断
+                result.append("📈 简单趋势: ");
+                if (numbers.size() >= 3) {
+                    int last = numbers.size() - 1;
+                    if (numbers.get(last) > numbers.get(last-1) && numbers.get(last-1) > numbers.get(last-2)) {
+                        result.append("近期呈上升趋势");
+                    } else if (numbers.get(last) < numbers.get(last-1) && numbers.get(last-1) < numbers.get(last-2)) {
+                        result.append("近期呈下降趋势");
+                    } else {
+                        result.append("近期呈波动趋势");
+                    }
+                } else {
+                    result.append("数据点不足，无法判断趋势");
+                }
+            } else {
+                result.append("无法从输入中提取数值数据进行分析。");
+            }
+            
+            return result.toString();
+            
+        } catch (Exception e) {
+            return "数据分析服务暂时不可用，请稍后重试。";
+        }
+    }
+    
+    /**
+     * 从文本中提取可能的数字
+     */
+    private List<Double> extractNumbers(String text) {
+        List<Double> numbers = new ArrayList<>();
+        
+        // 简单正则匹配数字 (可能是整数或小数)
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\b\\d+(\\.\\d+)?\\b");
+        java.util.regex.Matcher matcher = pattern.matcher(text);
+        
+        while (matcher.find()) {
+            try {
+                double number = Double.parseDouble(matcher.group());
+                // 过滤掉可能是年份、日期等的数字
+                if (number > 0 && number < 1_000_000) {
+                    numbers.add(number);
+                }
+            } catch (NumberFormatException ignored) {
+                // 忽略解析错误
+            }
+        }
+        
+        return numbers;
     }
 
     /**
@@ -375,6 +594,18 @@ public class DeepSeekAIService {
             }
         }
         
+        // 移除markdown星号标记（粗体、斜体）
+        cleaned = cleaned.replaceAll("\\*\\*([^*]+?)\\*\\*", "$1"); // 移除粗体 **text** -> text
+        cleaned = cleaned.replaceAll("\\*([^*]+?)\\*", "$1");       // 移除斜体 *text* -> text
+        
+        // 递归处理多层嵌套的星号
+        String previous;
+        do {
+            previous = cleaned;
+            cleaned = cleaned.replaceAll("\\*\\*([^*]+?)\\*\\*", "$1");
+            cleaned = cleaned.replaceAll("\\*([^*]+?)\\*", "$1");
+        } while (!cleaned.equals(previous));
+        
         // 如果是JSON格式，验证并格式化
         if (isJSONContent(cleaned)) {
             try {
@@ -521,8 +752,25 @@ public class DeepSeekAIService {
             6. 保留原始输入：将用户的原始输入添加到original_input字段
             
             📦 **订单类型识别:**
-            • **PURCHASE(采购)**: 采购、进货、购买、进料、补货、订购、从供应商、向厂家、从XX那里买、买了、购买了
+            • **PURCHASE(采购)**: 采购、进货、购买、进料、补货、订购、从供应商、向厂家、从XX那里买、买了、购买了、从XX买、从XX购买
             • **SALE(销售)**: 销售、出售、卖给、卖给了、卖了、售给、发货、交付、为客户、给客户、出售给
+            
+            🚨 **重要：采购识别优先级**
+            ⚠️ 特别注意："从XX买了50台电脑" → 这是采购订单(PURCHASE)，不是销售订单！
+            ⚠️ 特别注意："从冯天祎那里买了1台笔记本电脑" → 这是采购订单(PURCHASE)，不是销售订单！
+            ⚠️ 关键模式："从[任何人名/公司名]买/购买/采购" → 必须识别为 PURCHASE
+            ⚠️ 关键模式："从[任何人名/公司名]那里买/购买/采购" → 必须识别为 PURCHASE  
+            ⚠️ 销售模式："卖给[客户]/为[客户]" → 识别为 SALE
+            
+            🔴 **采购关键模式识别 - 优先级最高：**
+            • "从XX买" → PURCHASE
+            • "从XX那里买" → PURCHASE  
+            • "从XX这里买" → PURCHASE
+            • "从XX处买" → PURCHASE
+            • "从XX购买" → PURCHASE
+            • "从XX采购" → PURCHASE
+            • "向XX买" → PURCHASE
+            • "和XX买" → PURCHASE
             
             📝 **解析示例（严格按此格式）:**
             
@@ -560,6 +808,9 @@ public class DeepSeekAIService {
             
             输入："从哈振宇那里买了5瓶水，一瓶3元"
             输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "哈振宇", "products": [{"name": "水", "quantity": 5, "unit_price": 3.0}], "original_input": "从哈振宇那里买了5瓶水，一瓶3元"}
+            
+            输入："从冯天祎那里买了1台笔记本电脑，每台1000元"
+            输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "冯天祎", "products": [{"name": "笔记本电脑", "quantity": 1, "unit_price": 1000.0}], "original_input": "从冯天祎那里买了1台笔记本电脑，每台1000元"}
             
             输入："从李老板那里采购大米50袋单价80元"
             输出：{"action": "create_order", "order_type": "PURCHASE", "customer": "李老板", "products": [{"name": "大米", "quantity": 50, "unit_price": 80.0}], "original_input": "从李老板那里采购大米50袋单价80元"}
@@ -839,5 +1090,301 @@ public class DeepSeekAIService {
             
             throw new IOException("无法从API响应中提取回复内容");
         }
+    }
+
+    /**
+     * 生成本地分析结果
+     * 当API服务不可用或超时时，提供基本的本地数据分析
+     * 
+     * @param input 用户输入的文本
+     * @param dataContext 数据上下文信息
+     * @param analysisType 分析类型
+     * @return 本地生成的分析结果
+     */
+    public String generateLocalAnalysis(String input, String dataContext, String analysisType) {
+        try {
+            StringBuilder result = new StringBuilder();
+            result.append("本地分析结果 (AI服务暂时不可用)\n\n");
+            
+            // 根据分析类型提供不同的分析逻辑
+            switch (analysisType.toUpperCase()) {
+                case "ORDER":
+                    result.append("订单分析：\n");
+                    // 提取可能的订单数据
+                    if (dataContext != null && !dataContext.isEmpty()) {
+                        // 从dataContext中提取订单信息
+                        result.append(analyzeOrderContext(dataContext));
+                    } else {
+                        result.append("• 未提供足够的订单数据进行分析\n");
+                    }
+                    break;
+                    
+                case "FINANCE":
+                    result.append("财务分析：\n");
+                    if (dataContext != null && !dataContext.isEmpty()) {
+                        // 从dataContext中提取财务信息
+                        result.append(analyzeFinanceContext(dataContext));
+                    } else {
+                        result.append("• 未提供足够的财务数据进行分析\n");
+                    }
+                    break;
+                    
+                case "INVENTORY":
+                    result.append("库存分析：\n");
+                    if (dataContext != null && !dataContext.isEmpty()) {
+                        // 从dataContext中提取库存信息
+                        result.append(analyzeInventoryContext(dataContext));
+                    } else {
+                        result.append("• 未提供足够的库存数据进行分析\n");
+                    }
+                    break;
+                    
+                default:
+                    // 默认基础分析
+                    result.append("基础数据分析：\n");
+                    // 提取可能的数字数据
+                    List<Double> numbers = extractNumbers(dataContext != null ? dataContext : input);
+                    
+                    if (!numbers.isEmpty()) {
+                        // 计算基础统计数据
+                        double sum = 0, max = numbers.get(0), min = numbers.get(0);
+                        for (double num : numbers) {
+                            sum += num;
+                            max = Math.max(max, num);
+                            min = Math.min(min, num);
+                        }
+                        double avg = sum / numbers.size();
+                        
+                        result.append("• 数据点数量: ").append(numbers.size()).append("\n");
+                        result.append("• 总和: ").append(String.format("%.2f", sum)).append("\n");
+                        result.append("• 平均值: ").append(String.format("%.2f", avg)).append("\n");
+                        result.append("• 最大值: ").append(String.format("%.2f", max)).append("\n");
+                        result.append("• 最小值: ").append(String.format("%.2f", min)).append("\n");
+                    } else {
+                        result.append("• 未能从提供的数据中提取有效的数值信息\n");
+                    }
+            }
+            
+            // 添加用户查询的基础解释
+            if (input != null && !input.isEmpty()) {
+                result.append("\n针对您的问题 \"").append(input).append("\"：\n");
+                result.append("• 您可以查看上述基础统计数据作为参考\n");
+                result.append("• 系统当前无法提供深入的AI分析，请稍后重试\n");
+            }
+            
+            return result.toString();
+        } catch (Exception e) {
+            return "生成本地分析时出错: " + e.getMessage() + "\n请稍后重试或联系系统管理员。";
+        }
+    }
+    
+    /**
+     * 分析订单上下文数据
+     */
+    private String analyzeOrderContext(String orderContext) {
+        StringBuilder analysis = new StringBuilder();
+        
+        // 尝试计算订单相关的简单统计
+        try {
+            // 计算订单数量
+            int orderCount = countOccurrences(orderContext, "订单编号");
+            if (orderCount > 0) {
+                analysis.append("• 订单总数: ").append(orderCount).append("\n");
+            }
+            
+            // 估算订单金额
+            List<Double> amounts = extractNumbersFollowingPattern(orderContext, "金额[:：]\\s*([\\d\\.]+)");
+            if (!amounts.isEmpty()) {
+                double totalAmount = amounts.stream().mapToDouble(Double::doubleValue).sum();
+                double avgAmount = totalAmount / amounts.size();
+                analysis.append("• 估算订单总金额: ").append(String.format("%.2f", totalAmount)).append("\n");
+                analysis.append("• 平均订单金额: ").append(String.format("%.2f", avgAmount)).append("\n");
+            }
+            
+            // 简单状态统计
+            int completedOrders = countOccurrences(orderContext, "已完成");
+            int pendingOrders = countOccurrences(orderContext, "待处理");
+            int cancelledOrders = countOccurrences(orderContext, "已取消");
+            
+            if (completedOrders > 0 || pendingOrders > 0 || cancelledOrders > 0) {
+                analysis.append("• 订单状态分布:\n");
+                if (completedOrders > 0) analysis.append("  - 已完成: ").append(completedOrders).append("\n");
+                if (pendingOrders > 0) analysis.append("  - 待处理: ").append(pendingOrders).append("\n");
+                if (cancelledOrders > 0) analysis.append("  - 已取消: ").append(cancelledOrders).append("\n");
+            }
+        } catch (Exception e) {
+            analysis.append("• 订单数据分析出错: ").append(e.getMessage()).append("\n");
+        }
+        
+        if (analysis.length() == 0) {
+            analysis.append("• 未能从提供的数据中提取有效的订单信息\n");
+        }
+        
+        return analysis.toString();
+    }
+    
+    /**
+     * 分析财务上下文数据
+     */
+    private String analyzeFinanceContext(String financeContext) {
+        StringBuilder analysis = new StringBuilder();
+        
+        try {
+            // 提取收入和支出相关数据
+            List<Double> incomes = extractNumbersFollowingPattern(financeContext, "收入[:：]\\s*([\\d\\.]+)");
+            List<Double> expenses = extractNumbersFollowingPattern(financeContext, "支出[:：]\\s*([\\d\\.]+)");
+            
+            if (!incomes.isEmpty()) {
+                double totalIncome = incomes.stream().mapToDouble(Double::doubleValue).sum();
+                analysis.append("• 总收入: ").append(String.format("%.2f", totalIncome)).append("\n");
+            }
+            
+            if (!expenses.isEmpty()) {
+                double totalExpense = expenses.stream().mapToDouble(Double::doubleValue).sum();
+                analysis.append("• 总支出: ").append(String.format("%.2f", totalExpense)).append("\n");
+            }
+            
+            if (!incomes.isEmpty() && !expenses.isEmpty()) {
+                double totalIncome = incomes.stream().mapToDouble(Double::doubleValue).sum();
+                double totalExpense = expenses.stream().mapToDouble(Double::doubleValue).sum();
+                double profit = totalIncome - totalExpense;
+                analysis.append("• 估算利润: ").append(String.format("%.2f", profit)).append("\n");
+            }
+        } catch (Exception e) {
+            analysis.append("• 财务数据分析出错: ").append(e.getMessage()).append("\n");
+        }
+        
+        if (analysis.length() == 0) {
+            analysis.append("• 未能从提供的数据中提取有效的财务信息\n");
+        }
+        
+        return analysis.toString();
+    }
+    
+    /**
+     * 分析库存上下文数据
+     */
+    private String analyzeInventoryContext(String inventoryContext) {
+        StringBuilder analysis = new StringBuilder();
+        
+        try {
+            // 计算产品数量
+            int productCount = countOccurrences(inventoryContext, "产品编号");
+            if (productCount > 0) {
+                analysis.append("• 产品种类数: ").append(productCount).append("\n");
+            }
+            
+            // 提取库存数量
+            List<Double> quantities = extractNumbersFollowingPattern(inventoryContext, "数量[:：]\\s*([\\d\\.]+)");
+            if (!quantities.isEmpty()) {
+                double totalQuantity = quantities.stream().mapToDouble(Double::doubleValue).sum();
+                double avgQuantity = totalQuantity / quantities.size();
+                analysis.append("• 总库存数量: ").append(String.format("%.0f", totalQuantity)).append("\n");
+                analysis.append("• 平均每种产品库存: ").append(String.format("%.2f", avgQuantity)).append("\n");
+            }
+            
+            // 低库存警告
+            List<Double> lowStocks = extractNumbersFollowingPattern(inventoryContext, "库存不足|库存紧张");
+            if (!lowStocks.isEmpty()) {
+                analysis.append("• 有").append(lowStocks.size()).append("种产品库存不足，需要补货\n");
+            }
+        } catch (Exception e) {
+            analysis.append("• 库存数据分析出错: ").append(e.getMessage()).append("\n");
+        }
+        
+        if (analysis.length() == 0) {
+            analysis.append("• 未能从提供的数据中提取有效的库存信息\n");
+        }
+        
+        return analysis.toString();
+    }
+    
+    /**
+     * 计算字符串中特定模式出现的次数
+     */
+    private int countOccurrences(String text, String pattern) {
+        if (text == null || pattern == null) return 0;
+        
+        int count = 0;
+        int index = 0;
+        while ((index = text.indexOf(pattern, index)) != -1) {
+            count++;
+            index += pattern.length();
+        }
+        return count;
+    }
+    
+    /**
+     * 提取跟随特定模式后的数字
+     */
+    private List<Double> extractNumbersFollowingPattern(String text, String regex) {
+        List<Double> numbers = new ArrayList<>();
+        if (text == null || regex == null) return numbers;
+        
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(regex);
+        java.util.regex.Matcher matcher = pattern.matcher(text);
+        
+        while (matcher.find()) {
+            try {
+                String numStr = matcher.group(1);
+                numbers.add(Double.parseDouble(numStr));
+            } catch (Exception ignored) {
+                // 忽略无法解析的数字
+            }
+        }
+        
+        return numbers;
+    }
+
+    /**
+     * 从文本中检测订单类型
+     */
+    private String detectOrderTypeFromText(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return "";
+        }
+        
+        // 🚨 采购关键词 - 优先级更高，因为销售是默认
+        // 特别注意"从XX买"这种常见表达
+        String[] purchaseKeywords = {
+            "采购", "进货", "购买", "进料", "补货", "订购", "进仓", "入库",
+            "从供应商", "向厂家", "向供应商", "从厂家", "供应商", "厂家", 
+            "批发", "进购", "采买", "购进", "收货", "进材料", "买材料",
+            "从.*买", "从.*购买", "从.*采购", "从.*进货",  // 🆕 关键修复：从XX买的模式
+            "向.*买", "向.*购买", "向.*采购", "向.*进货"   // 🆕 向XX买的模式
+        };
+        
+        // 使用正则表达式检查采购模式
+        for (String keyword : purchaseKeywords) {
+            if (keyword.contains(".*")) {
+                // 对于包含正则的关键词，使用正则匹配
+                if (text.matches(".*" + keyword + ".*")) {
+                    System.out.println("🛒 检测到采购模式: " + keyword + " 在文本: " + text);
+                    return "PURCHASE";
+                }
+            } else {
+                // 对于普通关键词，使用包含检查
+                if (text.contains(keyword)) {
+                    System.out.println("🛒 检测到采购关键词: " + keyword);
+                    return "PURCHASE";
+                }
+            }
+        }
+        
+        // 销售关键词
+        String[] saleKeywords = {
+            "销售", "出售", "卖给", "售给", "发货", "交付", "为客户", "给客户",
+            "销", "卖", "售", "出货", "零售", "批售", "出售给", "卖出",
+            "客户订单", "销售订单", "出库", "发给"
+        };
+        
+        for (String keyword : saleKeywords) {
+            if (text.contains(keyword)) {
+                System.out.println("💰 检测到销售关键词: " + keyword);
+                return "SALE";
+            }
+        }
+        
+        return ""; // 无法确定
     }
 } 

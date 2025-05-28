@@ -14,9 +14,9 @@
       </div>
       
       <div class="right-menu-item hover-effect">
-        <el-badge :value="3" class="item">
+        <el-tooltip content="通知" effect="dark" placement="bottom">
           <i class="el-icon-bell"></i>
-        </el-badge>
+        </el-tooltip>
       </div>
       
       <el-dropdown class="avatar-container right-menu-item hover-effect" trigger="click">

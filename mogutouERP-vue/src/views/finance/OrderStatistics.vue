@@ -42,7 +42,7 @@ import { ref, onMounted, nextTick, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getFinance } from '@/api/finance' 
-import { sendNLIRequest } from '@/api/nli' // Import NLI API
+import { sendNLIRequest, getBusinessInsights } from '@/api/nli' // 更新import语句
 
 const loading = ref(false)
 const selectedYear = ref(new Date().getFullYear())
@@ -69,33 +69,274 @@ const fetchAIInsightsForOrders = async () => {
     aiLoading.value = false;
     return;
   }
+
+  // 检测是否所有数据都是零，避免无效分析
+  const hasNonZeroData = checkNonZeroData(financeData.value);
+  if (!hasNonZeroData) {
+    aiInsights.value = '当前时间段内无有效订单数据，请选择其他时间段。';
+    aiLoading.value = false;
+    return;
+  }
+  
   aiLoading.value = true;
   aiInsights.value = '';
 
   const year = selectedYear.value;
-  let queryContext = `${year}年度订单数据分析：\n`;
-  if (financeData.value.salesOrderQuantity) {
-    queryContext += `销售订单月度数量: ${financeData.value.salesOrderQuantity.join(', ')}。月度销售总额: ${financeData.value.salesTotalAmounts?.map(a => a.toFixed(2)).join(', ') ?? '无金额数据'}。\n`;
+  
+  // 创建结构化的数据上下文
+  const dataContext = generateOrderDataSummary(financeData.value, year);
+  
+  // 验证数据上下文是否有足够信息
+  if (dataContext.trim().length < 50) {
+    aiInsights.value = '订单数据量不足，无法进行深度分析。';
+    aiLoading.value = false;
+    return;
   }
-  if (financeData.value.purchaseOrderQuantity) {
-    queryContext += `采购订单月度数量: ${financeData.value.purchaseOrderQuantity.join(', ')}。月度采购总额: ${financeData.value.purchaseTotalAmounts?.map(a => a.toFixed(2)).join(', ') ?? '无金额数据'}。\n`;
-  }
+  
+  // 简化查询请求
+  const query = `${year}年订单数据分析，请提供趋势分析和具体建议`;
 
-  const query = `${queryContext}请基于以上订单数据，分析销售和采购的趋势，例如哪些月份订单较多/较少，销售额和采购额的波动情况。识别任何显著的模式、潜在的增长机会或风险点（如库存积压风险、销售旺季/淡季等），并提供3-5条关于库存优化、销售策略调整或采购计划方面的具体建议。`;
+  // 使用本地简单分析作为备用方案
+  const localAnalysis = generateSimpleOrderAnalysis(financeData.value, year);
 
   try {
-    const response = await sendNLIRequest(query);
+    // 尝试超时处理
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('分析请求超时')), 60000); // 60秒超时
+    });
+    
+    // 使用专门的业务洞察API，增加错误处理和超时保护
+    const apiPromise = getBusinessInsights(
+      query, 
+      'ORDER', // 指定分析类型为订单分析
+      dataContext
+    );
+    
+    // 竞争模式，谁先完成就使用谁的结果
+    const response = await Promise.race([apiPromise, timeoutPromise])
+      .catch(error => {
+        console.warn('AI分析超时或失败，使用本地简单分析', error);
+        // 返回本地分析结果作为备用
+        return { reply: localAnalysis };
+      });
+    
     if (response && response.reply) { 
-      aiInsights.value = response.reply;
+      // 确保移除可能的前缀
+      aiInsights.value = response.reply.replace(/^📊\s*/, ''); 
     } else {
-      aiInsights.value = '未能获取AI洞察，请稍后再试。 (返回内容格式不符)';
+      aiInsights.value = localAnalysis || '未能获取AI洞察，请稍后再试。';
     }
   } catch (error) {
     console.error('获取订单AI洞察失败:', error);
-    aiInsights.value = '获取AI洞察时发生错误: ' + (error.message || '未知错误');
+    
+    // 更详细的错误处理，并提供备用的本地分析结果
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      console.log('使用本地分析结果作为备用');
+      aiInsights.value = localAnalysis || '⏰ AI分析请求超时，已提供基础分析结果。';
+    } else if (error.response?.status === 500) {
+      aiInsights.value = localAnalysis || '🔧 AI服务暂时不可用，已提供基础分析结果。';
+    } else {
+      aiInsights.value = localAnalysis || `❌ 获取AI洞察失败: ${error.message || '未知错误'}`;
+    }
   } finally {
     aiLoading.value = false;
   }
+};
+
+// 检查是否有非零数据
+const checkNonZeroData = (data) => {
+  if (!data) return false;
+  
+  // 检查销售订单数量
+  const hasSalesData = data.salesOrderQuantity?.some(val => val > 0) || false;
+  
+  // 检查采购订单数量
+  const hasPurchaseData = data.purchaseOrderQuantity?.some(val => val > 0) || false;
+  
+  return hasSalesData || hasPurchaseData;
+};
+
+// 生成简单的订单分析，作为备用方案
+const generateSimpleOrderAnalysis = (data, year) => {
+  if (!data) return '无数据可分析';
+  
+  try {
+    // 计算基本指标
+    const salesTotal = data.salesOrderQuantity?.reduce((sum, val) => sum + val, 0) || 0;
+    const purchaseTotal = data.purchaseOrderQuantity?.reduce((sum, val) => sum + val, 0) || 0;
+    
+    let salesAmount = data.salesTotalAmounts?.reduce((sum, val) => sum + (val || 0), 0) || 0;
+    let purchaseAmount = data.purchaseTotalAmounts?.reduce((sum, val) => sum + (val || 0), 0) || 0;
+    
+    // 识别最高月份
+    const salesMax = findMaxMonth(data.salesOrderQuantity || []);
+    const purchaseMax = findMaxMonth(data.purchaseOrderQuantity || []);
+    
+    // 检测是否有月度变化
+    const salesMonths = data.salesOrderQuantity?.filter(val => val > 0).length || 0;
+    const purchaseMonths = data.purchaseOrderQuantity?.filter(val => val > 0).length || 0;
+    
+    let result = `🎯 ${year}年订单基础分析\n\n`;
+    
+    // 订单数量摘要
+    result += `📊 订单数量\n`;
+    result += `• 销售订单总数: ${salesTotal}单\n`;
+    result += `• 采购订单总数: ${purchaseTotal}单\n`;
+    if (salesTotal > 0) {
+      result += `• 销售订单最多月份: ${salesMax.month+1}月 (${salesMax.value}单)\n`;
+    }
+    if (purchaseTotal > 0) {
+      result += `• 采购订单最多月份: ${purchaseMax.month+1}月 (${purchaseMax.value}单)\n`;
+    }
+    
+    // 订单金额摘要
+    if (salesAmount > 0 || purchaseAmount > 0) {
+      result += `\n💰 订单金额\n`;
+      if (salesAmount > 0) {
+        result += `• 销售总额: ¥${salesAmount.toFixed(2)}\n`;
+      }
+      if (purchaseAmount > 0) {
+        result += `• 采购总额: ¥${purchaseAmount.toFixed(2)}\n`;
+      }
+      if (salesAmount > 0 && purchaseAmount > 0) {
+        const margin = salesAmount - purchaseAmount;
+        result += `• 差额: ¥${margin.toFixed(2)}\n`;
+      }
+    }
+    
+    // 简单分析
+    result += `\n📈 基础趋势\n`;
+    if (salesMonths <= 1 && purchaseMonths <= 1) {
+      result += `• 数据分布在单个月份，无法分析趋势\n`;
+    } else {
+      if (salesTotal > purchaseTotal * 1.5) {
+        result += `• 销售订单明显多于采购订单，可能需要关注库存\n`;
+      } else if (purchaseTotal > salesTotal * 1.5) {
+        result += `• 采购订单明显多于销售订单，可能处于备货期\n`;
+      } else {
+        result += `• 销售与采购相对平衡\n`;
+      }
+    }
+    
+    // 简单建议
+    result += `\n💡 基础建议\n`;
+    if (salesTotal === 0 && purchaseTotal === 0) {
+      result += `• 当前无订单数据，建议检查数据录入\n`;
+    } else {
+      if (salesMonths <= 1 || purchaseMonths <= 1) {
+        result += `• 考虑拓展业务周期，分散到更多月份\n`;
+      }
+      
+      if (salesMax.value > 0 && salesMax.month === purchaseMax.month) {
+        result += `• ${salesMax.month+1}月是业务高峰期，建议提前规划资源\n`;
+      }
+      
+      result += `• 定期监控订单趋势，制定相应业务策略\n`;
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('生成本地分析失败:', error);
+    return `基础数据统计：销售订单${data.salesOrderQuantity?.reduce((sum, val) => sum + val, 0) || 0}单，采购订单${data.purchaseOrderQuantity?.reduce((sum, val) => sum + val, 0) || 0}单。`;
+  }
+};
+
+// 生成结构化的订单数据摘要
+const generateOrderDataSummary = (data, year) => {
+  if (!data) return '';
+  
+  // 计算关键指标
+  const salesTotal = data.salesOrderQuantity?.reduce((sum, val) => sum + val, 0) || 0;
+  const purchaseTotal = data.purchaseOrderQuantity?.reduce((sum, val) => sum + val, 0) || 0;
+  
+  let salesAmount = 0;
+  let purchaseAmount = 0;
+  
+  if (data.salesTotalAmounts) {
+    salesAmount = data.salesTotalAmounts.reduce((sum, val) => sum + val, 0);
+  }
+  
+  if (data.purchaseTotalAmounts) {
+    purchaseAmount = data.purchaseTotalAmounts.reduce((sum, val) => sum + val, 0);
+  }
+  
+  // 计算月度波动率
+  const salesVariation = calculateVariation(data.salesOrderQuantity || []);
+  const purchaseVariation = calculateVariation(data.purchaseOrderQuantity || []);
+  
+  // 识别最高/最低月份
+  const salesMax = findMaxMonth(data.salesOrderQuantity || []);
+  const salesMin = findMinMonth(data.salesOrderQuantity || []);
+  const purchaseMax = findMaxMonth(data.purchaseOrderQuantity || []);
+  const purchaseMin = findMinMonth(data.purchaseOrderQuantity || []);
+  
+  // 组装结构化摘要
+  return `
+${year}年度订单数据分析摘要:
+- 销售订单总数: ${salesTotal}单
+- 采购订单总数: ${purchaseTotal}单
+- 销售订单总额: ¥${salesAmount.toFixed(2)}
+- 采购订单总额: ¥${purchaseAmount.toFixed(2)}
+- 销售峰值月份: ${salesMax.month+1}月 (${salesMax.value}单)
+- 销售低谷月份: ${salesMin.month+1}月 (${salesMin.value}单)
+- 采购峰值月份: ${purchaseMax.month+1}月 (${purchaseMax.value}单)
+- 采购低谷月份: ${purchaseMin.month+1}月 (${purchaseMin.value}单)
+- 销售月度波动率: ${salesVariation.toFixed(2)}%
+- 采购月度波动率: ${purchaseVariation.toFixed(2)}%
+- 销售/采购订单比: ${(salesTotal/(purchaseTotal || 1)).toFixed(2)}
+- 销售月度数量: ${data.salesOrderQuantity?.join(', ') || 'N/A'}
+- 采购月度数量: ${data.purchaseOrderQuantity?.join(', ') || 'N/A'}
+`;
+};
+
+// 计算数据波动率
+const calculateVariation = (data) => {
+  if (!data || data.length < 2) return 0;
+  
+  const validData = data.filter(val => val !== undefined && val !== null);
+  if (validData.length < 2) return 0;
+  
+  const avg = validData.reduce((sum, val) => sum + val, 0) / validData.length;
+  const variance = validData.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / validData.length;
+  const stdDev = Math.sqrt(variance);
+  
+  // 波动率 = 标准差/平均值 * 100%
+  return (stdDev / avg) * 100;
+};
+
+// 查找最大值月份
+const findMaxMonth = (data) => {
+  if (!data || data.length === 0) return { month: 0, value: 0 };
+  
+  let maxIdx = 0;
+  let maxVal = data[0] || 0;
+  
+  for (let i = 1; i < data.length; i++) {
+    if ((data[i] || 0) > maxVal) {
+      maxVal = data[i] || 0;
+      maxIdx = i;
+    }
+  }
+  
+  return { month: maxIdx, value: maxVal };
+};
+
+// 查找最小值月份
+const findMinMonth = (data) => {
+  if (!data || data.length === 0) return { month: 0, value: 0 };
+  
+  let minIdx = 0;
+  let minVal = data[0] || 0;
+  
+  // 找出非零最小值
+  for (let i = 0; i < data.length; i++) {
+    if ((data[i] || 0) > 0 && ((data[i] || 0) < minVal || minVal === 0)) {
+      minVal = data[i] || 0;
+      minIdx = i;
+    }
+  }
+  
+  return { month: minIdx, value: minVal };
 };
 
 const fetchOrderStatistics = async () => {

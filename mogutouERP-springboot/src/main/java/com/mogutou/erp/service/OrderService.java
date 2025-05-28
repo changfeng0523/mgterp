@@ -157,7 +157,12 @@ public class OrderService {
 
             // 保存订单
             Order savedOrder = orderRepository.save(order);
-            log.info("订单保存成功: ID={}, 类型={}, 金额={}", savedOrder.getId(), savedOrder.getOrderType(), savedOrder.getAmount());
+            log.info("订单保存成功: ID={}, 类型={}, 金额={}, 状态={}", 
+                    savedOrder.getId(), savedOrder.getOrderType(), savedOrder.getAmount(), savedOrder.getStatus());
+            
+            // 🆕 移除自动确认功能，保持订单在PENDING状态
+            // 用户需要手动确认订单才会更新库存和财务记录
+            // 这样用户可以完全控制确认过程
             
             return savedOrder;
         } catch (Exception e) {
