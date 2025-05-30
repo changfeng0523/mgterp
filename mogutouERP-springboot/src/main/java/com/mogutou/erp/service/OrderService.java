@@ -140,6 +140,11 @@ public class OrderService {
                     if (item.getUnitPrice() != null && item.getQuantity() != null) {
                         item.setTotalPrice(item.getUnitPrice() * item.getQuantity());
                         totalAmount += item.getTotalPrice();
+                        log.info("商品价格计算 - 名称: {}, 单价: {}, 数量: {}, 总价: {}", 
+                            goodsItem.getName(), item.getUnitPrice(), item.getQuantity(), item.getTotalPrice());
+                    } else {
+                        log.warn("商品价格信息不完整 - 名称: {}, 单价: {}, 数量: {}", 
+                            goodsItem.getName(), item.getUnitPrice(), item.getQuantity());
                     }
                     
                     item.setOrder(order);
@@ -324,10 +329,17 @@ public class OrderService {
             // 计算订单总金额
             java.math.BigDecimal totalAmount = java.math.BigDecimal.ZERO;
             for (OrderGoods orderGoods : order.getGoods()) {
+                log.info("财务记录计算 - 商品: {}, 单价: {}, 数量: {}, 总价: {}", 
+                    orderGoods.getGoods() != null ? orderGoods.getGoods().getName() : "null",
+                    orderGoods.getUnitPrice(),
+                    orderGoods.getQuantity(),
+                    orderGoods.getTotalPrice());
                 if (orderGoods.getTotalPrice() != null) {
                     totalAmount = totalAmount.add(java.math.BigDecimal.valueOf(orderGoods.getTotalPrice()));
                 }
             }
+            
+            log.info("财务记录总金额计算结果: {}", totalAmount);
 
             if ("PURCHASE".equals(order.getOrderType())) {
                 // 采购订单：记录为支出

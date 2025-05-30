@@ -30,11 +30,13 @@ C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\moguto
 C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\PasswordService.java
 C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\InventoryService.java
 C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\InventoryRepository.java
+C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\common\CodeGenerator.java
 C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\impl\InventoryServiceImpl.java
 C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Finance.java
 C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\StaffController.java
 C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\FinanceRecord.java
 C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\CompanyController.java
+C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\FileController.java
 C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\JwtInterceptor.java
 C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\OrderController.java
 C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\OrderGoods.java

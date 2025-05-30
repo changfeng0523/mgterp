@@ -49,6 +49,17 @@ public class OrderController {
                 return Result.error("订单商品不能为空");
             }
             
+            // 添加调试日志，检查商品价格信息
+            for (int i = 0; i < goods.size(); i++) {
+                OrderGoods item = goods.get(i);
+                log.info("商品 {} - 名称: {}, 数量: {}, 单价: {}, 总价: {}", 
+                    i, 
+                    item.getGoods() != null ? item.getGoods().getName() : "null",
+                    item.getQuantity(),
+                    item.getUnitPrice(),
+                    item.getTotalPrice());
+            }
+            
             // 强制设置正确的订单类型 - 关键修复
             if (order.getType() != null) {
                 if ("customer".equalsIgnoreCase(order.getType())) {

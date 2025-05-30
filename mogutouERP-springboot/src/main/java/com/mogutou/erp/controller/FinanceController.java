@@ -144,6 +144,7 @@ public class FinanceController {
             
             for (FinanceRecord record : records) {
                 Map<String, Object> item = new HashMap<>();
+                item.put("id", record.getId());
                 item.put("date", dateFormat.format(record.getRecordDate()));
                 item.put("income", record.getIncome());
                 item.put("expense", record.getExpense());

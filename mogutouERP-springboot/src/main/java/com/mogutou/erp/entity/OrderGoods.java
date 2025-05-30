@@ -26,12 +26,32 @@ public class OrderGoods {
     private Integer quantity;
     
     @Column(name = "unit_price")
-    @JsonProperty("price")
+    @JsonProperty("unitPrice")
     private Float unitPrice;
     
     @Column(name = "total_price")
-    @JsonProperty("amount")
+    @JsonProperty("totalPrice")
     private Float totalPrice;
+    
+    @JsonProperty("price")
+    public void setPrice(Float price) {
+        this.unitPrice = price;
+    }
+    
+    @JsonProperty("price")
+    public Float getPrice() {
+        return this.unitPrice;
+    }
+    
+    @JsonProperty("amount")
+    public void setAmount(Float amount) {
+        this.totalPrice = amount;
+    }
+    
+    @JsonProperty("amount")
+    public Float getAmount() {
+        return this.totalPrice;
+    }
     
     @JsonProperty("name")
     public String getName() {

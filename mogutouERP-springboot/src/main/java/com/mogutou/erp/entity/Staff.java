@@ -3,6 +3,7 @@ package com.mogutou.erp.entity;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import jakarta.persistence.*;
 import java.time.LocalDate;
@@ -13,6 +14,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Entity
 @Table(name = "staff")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Staff {
 
     @Id
@@ -38,6 +40,7 @@ public class Staff {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "company_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private Company company;
     
     @Column(name = "created_at", updatable = false)
