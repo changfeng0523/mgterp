@@ -3,11 +3,11 @@ import request from '@/utils/request'
 export function useInventoryApi() {
   return {
     // 获取库存列表
-    getInventoryList({ page, size }) {
+    getInventoryList(params = { page: 0, size: 10 }) {
       return request({
         url: '/api/inventory/list',
         method: 'get',
-        params: { page, size }
+        params
       })
     },
 
@@ -17,6 +17,11 @@ export function useInventoryApi() {
         url: `/api/inventory/${id}`,
         method: 'get'
       })
+    },
+
+    // 获取库存详情（别名方法，与store保持一致）
+    getInventoryDetail(id) {
+      return this.getInventoryById(id)
     },
 
     // 创建库存

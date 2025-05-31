@@ -58,7 +58,7 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
-import { useUserStore } from '@/store/modules/user'
+import { useUserStore } from '@/stores/user'
 import { useAppStore } from '@/stores/app'
 import { computed } from 'vue'
 import Breadcrumb from './Breadcrumb.vue'

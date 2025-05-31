@@ -131,8 +131,8 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useOrderStore } from '@/store/modules/order'
-import { ElMessage } from 'element-plus'
+import { useOrderStore } from '@/stores/order'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
 const orderStore = useOrderStore()

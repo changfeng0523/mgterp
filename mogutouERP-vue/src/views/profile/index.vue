@@ -91,11 +91,10 @@
 </template>
 
 <script setup>
-// 在script setup部分添加
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading, User } from '@element-plus/icons-vue'
-import { useUserStore } from '@/store/modules/user'
+import { useUserStore } from '@/stores/user'
 import { getInfo } from '@/api/user'
 import { getToken } from '@/utils/auth'
 import request from '@/utils/request'
@@ -367,6 +366,11 @@ const uploadHeaders = computed(() => {
     Authorization: getToken() || ''
   }
 })
+
+const handleAvatarError = (err, file, fileList) => {
+  console.error('头像上传错误:', err)
+  ElMessage.error('头像上传失败: ' + (err.message || '未知错误'))
+}
 </script>
 
 <style scoped>
@@ -423,9 +427,3 @@ const uploadHeaders = computed(() => {
   }
 }
 </style>
-
-// 在script setup部分添加
-const handleAvatarError = (err, file, fileList) => {
-  console.error('头像上传错误:', err)
-  ElMessage.error('头像上传失败: ' + (err.message || '未知错误'))
-}

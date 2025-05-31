@@ -54,7 +54,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useCompanyStore } from '@/store/modules/company'
+import { useCompanyStore } from '@/stores/company'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -130,7 +130,7 @@ const handleSubmit = async () => {
     await formRef.value.validate()
     loading.value = true
     
-    await companyStore.updateCompany({ id: form.value.id, companyData: form.value })
+    await companyStore.updateCompany(form.value.id, form.value)
     ElMessage.success('更新成功')
     router.push('/company')
   } catch (error) {

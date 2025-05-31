@@ -54,7 +54,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useCompanyStore } from '@/store/modules/company'
+import { useCompanyStore } from '@/stores/company'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()

@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { useUserStore } from '../store/modules/user'
+import { useUserStore } from '@/stores/user'
 import { getToken } from './auth'
 
 // 创建axios实例

@@ -1,51 +1,51 @@
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\CommandExecutorService.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\impl\FinanceServiceImpl.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\impl\AIServiceImpl.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\CorsConfig.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\FinanceController.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\AuthController.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\User.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\impl\CommandExecutorServiceImpl.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\SecurityConfig.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Goods.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\GoodsRepository.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\FinanceRecordRepository.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\external\DeepSeekAIService.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Inventory.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\JwtConfig.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Staff.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\dto\AIResponse.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\StaffService.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\UserRepository.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\FinanceService.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\OrderRepository.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\dto\AIRequest.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\CompanyService.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\OrderService.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\CompanyRepository.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\AIController.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\WebMvcConfig.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\StaffRepository.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\MogutouErpApplication.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\PasswordService.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\InventoryService.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\InventoryRepository.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\common\CodeGenerator.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\impl\InventoryServiceImpl.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Finance.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\StaffController.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\FinanceRecord.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\CompanyController.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\FileController.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\JwtInterceptor.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\OrderController.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\OrderGoods.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\common\Result.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\common\ResultCode.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Order.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Company.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\GlobalExceptionHandler.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\InventoryController.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\OrderStatus.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\AIService.java
-C:\Users\哈振宇\Desktop\mgterp\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\UserService.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\WebMvcConfig.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Order.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\StaffRepository.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\FileController.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\FinanceRecord.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\StaffController.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\CorsConfig.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\CompanyService.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Finance.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Inventory.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\GoodsRepository.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\impl\CommandExecutorServiceImpl.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\GlobalExceptionHandler.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\SecurityConfig.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\AIService.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\common\ResultCode.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\PasswordService.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\OrderGoods.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\OrderRepository.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\UserRepository.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\dto\AIResponse.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\OrderStatus.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\FinanceRecordRepository.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\impl\InventoryServiceImpl.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\JwtInterceptor.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\dto\AIRequest.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\StaffService.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\AuthController.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Staff.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\impl\AIServiceImpl.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\User.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\external\DeepSeekAIService.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\FinanceService.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\FinanceController.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\AIController.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\OrderController.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\CommandExecutorService.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\impl\FinanceServiceImpl.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\CompanyRepository.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\OrderService.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\InventoryController.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\controller\CompanyController.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\common\Result.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\MogutouErpApplication.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\InventoryService.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\service\UserService.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\config\JwtConfig.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\repository\InventoryRepository.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\common\CodeGenerator.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Company.java
+C:\Users\哈振宇\Desktop\mgterp - 副本\mogutouERP-springboot\src\main\java\com\mogutou\erp\entity\Goods.java

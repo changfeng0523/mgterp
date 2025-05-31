@@ -128,7 +128,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { useOrderStore } from '@/store/modules/order'
+import { useOrderStore } from '@/stores/order'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()

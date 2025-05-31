@@ -124,7 +124,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getStaff, createStaff, updateStaff, deleteStaff } from '@/api/company'
-import { useCompanyStore } from '@/store/modules/company'
+import { useCompanyStore } from '@/stores/company'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const route = useRoute()

@@ -1,22 +1,30 @@
-import { useApi } from './index'
+import request from '@/utils/request'
 import md5 from 'js-md5'
 
 export const useLoginApi = () => {
-  const { get, post } = useApi()
-
   const login = async (username, password) => {
-    return await post('/api/auth/login', {
-      username: username,
-      password: md5(password)
+    return await request({
+      url: '/api/auth/login',
+      method: 'post',
+      data: {
+        username: username,
+        password: md5(password)
+      }
     })
   }
 
   const getInfo = async () => {
-    return await get('/api/auth/user')
+    return await request({
+      url: '/api/auth/user',
+      method: 'get'
+    })
   }
 
   const logout = async () => {
-    return await get('/api/auth/logout')
+    return await request({
+      url: '/api/auth/logout',
+      method: 'get'
+    })
   }
 
   return {

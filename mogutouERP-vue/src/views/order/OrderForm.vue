@@ -88,12 +88,13 @@
 
 <script setup>
 import { ref, reactive, computed, onBeforeUnmount, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { useOrderStore } from '@/store/modules/order'
+import { useRouter, useRoute } from 'vue-router'
+import { useOrderStore } from '@/stores/order'
 import { useInventoryApi } from '@/api/inventory'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
+const route = useRoute()
 const orderStore = useOrderStore()
 const inventoryApi = useInventoryApi()
 const formRef = ref(null)

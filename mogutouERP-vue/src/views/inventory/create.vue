@@ -116,7 +116,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useInventoryStore } from '@/store/modules/inventory'
+import { useInventoryStore } from '@/stores/inventory'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
